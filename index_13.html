@@ -1,0 +1,2721 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<style>
+:root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+body{margin:0;font:14px system-ui,sans-serif}
+img{max-width:100%}
+[hidden]{display:none!important}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script>
+/* ===== ตั้งค่า Supabase: แก้ 2 บรรทัดนี้ให้เป็นของโปรเจกต์คุณ ===== */
+const SUPABASE_URL  = 'hhttps://jfcbulebyzunsncvruya.supabase.co';
+const SUPABASE_KEY  = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpmY2J1bGVieXp1bnNuY3ZydXlhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA5MTI4MTAsImV4cCI6MjEwNjQ4ODgxMH0.vNVBQqdgzm2COiihdYhAu3iBgxBykk8dnS15i8OEuyY';
+/* true = โหมดเดโม มีลูกค้าตัวอย่าง 12 ราย / false = เริ่มจากศูนย์ตอนใช้จริง */
+const DEMO_SEED = true;
+const BUCKET = 'loan-photos';
+
+const SB = (SUPABASE_URL.includes('xxxxxxxxxxxx') || !window.supabase)
+  ? null : window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+/* ---- อะแดปเตอร์: ให้โค้ดแอปเรียกใช้เหมือนเดิมทุกบรรทัด ---- */
+const PK = {contracts:'no'};
+function sbSnap(table, cb){
+  const key = PK[table] || 'id';
+  const load = async () => {
+    const {data,error} = await SB.from(table).select('*');
+    if(error){ console.warn(table, error.message); return }
+    cb({docs:(data||[]).map(row=>({id:row[key], data:()=>row}))});
+  };
+  load();
+  try{
+    SB.channel('rt-'+table)
+      .on('postgres_changes',{event:'*',schema:'public',table},load).subscribe();
+  }catch(e){ console.warn('realtime off', e) }
+  setInterval(load, 30000);           // กันไว้เผื่อ realtime ไม่ทำงาน
+  return () => {};
+}
+const SBDB = {
+  collection(table){
+    return {
+      onSnapshot(next){ return sbSnap(table, next) },
+      async add(rec){
+        const {error} = await SB.from(table).insert(rec);
+        if(error) throw {code:error.code||'error', message:error.message};
+      }
+    };
+  },
+  doc(path){
+    const [table, id] = path.split('/'); const key = PK[table] || 'id';
+    return {
+      async set(data){
+        const {error} = await SB.from(table).upsert({...data,[key]:id});
+        if(error) throw {code:error.code||'error', message:error.message};
+      },
+      async update(data){
+        const {error} = await SB.from(table).update(data).eq(key,id);
+        if(error) throw {code:error.code||'error', message:error.message};
+      },
+      async delete(){
+        const {error} = await SB.from(table).delete().eq(key,id);
+        if(error) throw {code:error.code||'error', message:error.message};
+      }
+    };
+  }
+};
+/* ---------- ล็อกอิน + สมัครสมาชิกด้วย username ---------- */
+const USER_DOMAIN = 'local.app';     // username จะกลายเป็น <username>@local.app ให้ Supabase
+const ROLE_LABEL = {pending:'รออนุมัติ', collector:'คนเดินเก็บ', owner:'เจ้าของ'};
+let APP_USER = null, APP_ROLE = null;
+
+const toEmail = u => String(u||'').trim().toLowerCase().replace(/\s+/g,'') + '@' + USER_DOMAIN;
+const toUser  = e => String(e||'').split('@')[0];
+
+function panel(inner){
+  const g = document.createElement('div');
+  g.id = 'authGate';
+  g.style.cssText = 'position:fixed;inset:0;z-index:60;background:var(--bg);display:flex;'
+    + 'align-items:center;justify-content:center;padding:20px;overflow:auto';
+  g.innerHTML = `<div style="max-width:370px;width:100%;background:var(--surface);
+    border:1px solid var(--line);border-radius:14px;padding:22px;display:grid;gap:12px">${inner}</div>`;
+  document.body.appendChild(g);
+  return g;
+}
+
+function authGateHTML(mode){
+  const up = mode === 'signup';
+  const old = document.getElementById('authGate'); if(old) old.remove();
+  panel(`
+    <b style="font-family:var(--font-d);font-size:20px">ระบบเงินกู้รายวัน</b>
+    <div class="filters" style="margin-bottom:2px">
+      <button id="auTabIn"  aria-pressed="${!up}">เข้าสู่ระบบ</button>
+      <button id="auTabUp" aria-pressed="${up}">สมัครสมาชิก</button>
+    </div>
+    <label>ชื่อผู้ใช้ (username)<input id="auUser" autocomplete="username"
+      inputmode="text" placeholder="เช่น piak"></label>
+    ${up ? '<label>ชื่อที่แสดง<input id="auName" placeholder="เช่น เปี๊ยก"></label>' : ''}
+    <label>รหัสผ่าน<input id="auPass" type="password"
+      autocomplete="${up ? 'new-password' : 'current-password'}"></label>
+    <button class="go" id="auGo">${up ? 'สมัครสมาชิก' : 'เข้าสู่ระบบ'}</button>
+    <p class="fmini" id="auMsg">${up
+      ? 'สมัครแล้วต้องรอเจ้าของอนุมัติก่อนถึงจะเข้าใช้งานได้'
+      : 'ยังไม่มีบัญชี กดสมัครสมาชิกได้เลย'}</p>`);
+
+  document.getElementById('auTabIn').onclick = () => authGateHTML('login');
+  document.getElementById('auTabUp').onclick = () => authGateHTML('signup');
+
+  const go = async () => {
+    const msg = document.getElementById('auMsg');
+    const u = document.getElementById('auUser').value.trim().toLowerCase();
+    const p = document.getElementById('auPass').value;
+    msg.style.color = 'var(--muted)';
+    if(!/^[a-z0-9._-]{3,}$/.test(u)){
+      msg.textContent = 'ชื่อผู้ใช้ต้องเป็นภาษาอังกฤษหรือตัวเลข อย่างน้อย 3 ตัว';
+      msg.style.color = 'var(--bad)'; return }
+    if(p.length < 6){ msg.textContent = 'รหัสผ่านอย่างน้อย 6 ตัว'; msg.style.color = 'var(--bad)'; return }
+    msg.textContent = up ? 'กำลังสมัคร…' : 'กำลังเข้าสู่ระบบ…';
+
+    if(up){
+      const name = (document.getElementById('auName').value || u).trim();
+      const {data, error} = await SB.auth.signUp({
+        email: toEmail(u), password: p, options:{data:{name, username:u}}});
+      if(error){
+        msg.textContent = /already/i.test(error.message) ? 'ชื่อผู้ใช้นี้มีคนใช้แล้ว' : 'สมัครไม่สำเร็จ: ' + error.message;
+        msg.style.color = 'var(--bad)'; return }
+      if(data.session) return enterApp(data.session.user);
+      msg.textContent = 'สมัครเรียบร้อย · กดแท็บเข้าสู่ระบบเพื่อเข้าใช้งาน';
+      msg.style.color = 'var(--ok)'; return;
+    }
+    const {data, error} = await SB.auth.signInWithPassword({email: toEmail(u), password: p});
+    if(error){ msg.textContent = 'เข้าไม่ได้ · ตรวจชื่อผู้ใช้กับรหัสผ่านอีกครั้ง'; msg.style.color = 'var(--bad)'; return }
+    enterApp(data.user);
+  };
+  document.getElementById('auGo').onclick = go;
+  document.getElementById('auPass').onkeydown = e => { if(e.key === 'Enter') go() };
+}
+
+function pendingGate(name){
+  const old = document.getElementById('authGate'); if(old) old.remove();
+  panel(`
+    <b style="font-family:var(--font-d);font-size:19px">บัญชีรออนุมัติ</b>
+    <p class="fmini">สวัสดีคุณ ${name} · บัญชีของคุณสมัครเรียบร้อยแล้ว
+      แต่ต้องให้เจ้าของระบบกำหนดสิทธิ์ก่อนถึงจะเข้าใช้งานได้</p>
+    <button class="go" id="auRetry">ตรวจสอบอีกครั้ง</button>
+    <button class="ghost" id="auOut" style="justify-content:center">ออกจากระบบ</button>`);
+  document.getElementById('auRetry').onclick = () => location.reload();
+  document.getElementById('auOut').onclick = async () => { await SB.auth.signOut(); location.reload() };
+}
+
+async function startAuth(){
+  if(!SB){ initDB(); return }                      // ยังไม่ตั้งค่า Supabase = ลองในเครื่อง
+  const {data:{session}} = await SB.auth.getSession();
+  if(session) return enterApp(session.user);
+  authGateHTML('login');
+}
+
+async function enterApp(user){
+  APP_USER = user;
+  let role = 'collector', name = toUser(user.email), note = '';
+  const {data, error} = await SB.from('profiles').select('role,name').eq('id', user.id).maybeSingle();
+  if(error) role = 'owner';                        // ยังไม่ได้สร้างตาราง profiles = ช่วงตั้งระบบ
+  else if(data){ role = data.role || 'pending'; name = data.name || name }
+  else { role = 'pending'; note = 'ยังไม่มีโปรไฟล์ในระบบ' }
+  APP_ROLE = role;
+
+  if(role === 'pending') return pendingGate(name);
+
+  const g = document.getElementById('authGate'); if(g) g.remove();
+  try{ localStorage.setItem('collector', name) }catch(e){}
+  const fn = document.getElementById('fName'); if(fn) fn.value = name;
+
+  if(role === 'owner'){
+    try{ sessionStorage.setItem('adm','1') }catch(e){}                       // เจ้าของไม่ต้องใส่ PIN
+    const nb = document.querySelector('.nav button[data-view="users"]');
+    if(nb){ nb.hidden = false; nb.addEventListener('click', renderUsers) }
+    setTimeout(renderUsers, 800);
+  } else {
+    const b = document.getElementById('toAdmin'); if(b) b.remove();          // คนเก็บเงินไม่เห็นหลังบ้าน
+  }
+
+  addLogout(name, role, note);
+  initDB(); renderAll();
+}
+
+/* ---------- จัดการผู้ใช้ (เฉพาะเจ้าของ) ---------- */
+async function renderUsers(){
+  const box = document.getElementById('userBox'); if(!box || APP_ROLE !== 'owner') return;
+  const {data, error} = await SB.from('profiles')
+    .select('id,username,name,role,created_at').order('created_at', {ascending:false});
+  if(error){ box.innerHTML = '<p class="hint">อ่านรายชื่อไม่ได้: ' + error.message + '</p>'; return }
+  const rows = data || [];
+  const waiting = rows.filter(r => r.role === 'pending').length;
+  const nb = document.getElementById('navUser');
+  if(nb){ nb.hidden = !waiting; nb.textContent = waiting }
+
+  box.innerHTML = `<div class="scroll"><table>
+    <thead><tr><th>ชื่อผู้ใช้</th><th>ชื่อที่แสดง</th><th>สมัครเมื่อ</th><th>สิทธิ์</th><th></th></tr></thead>
+    <tbody>${rows.map(r => `<tr>
+      <td class="mono">${esc(r.username || toUser(r.id))}</td>
+      <td>${esc(r.name || '—')}</td>
+      <td>${r.created_at ? thDate(String(r.created_at).slice(0,10)) : '—'}</td>
+      <td><select data-uid="${r.id}" ${r.id === APP_USER.id ? 'disabled' : ''}>
+        ${Object.keys(ROLE_LABEL).map(k =>
+          `<option value="${k}" ${k === r.role ? 'selected' : ''}>${ROLE_LABEL[k]}</option>`).join('')}
+      </select></td>
+      <td class="r">${r.id === APP_USER.id ? '<span class="hint">บัญชีคุณเอง</span>'
+        : r.role === 'pending' ? '<button class="ghost" data-ok="' + r.id + '">อนุมัติเป็นคนเดินเก็บ</button>' : ''}</td>
+    </tr>`).join('') || '<tr><td colspan="5" class="hint">ยังไม่มีใครสมัคร</td></tr>'}</tbody></table></div>
+    <p class="hint" style="margin-top:10px">สิทธิ์มีผลทันทีที่ผู้ใช้โหลดหน้าใหม่ ·
+      กฎจริงบังคับที่ฐานข้อมูล (RLS) ไม่ใช่แค่ซ่อนปุ่ม</p>`;
+
+  const setRole = async (uid, role) => {
+    const {error} = await SB.from('profiles').update({role}).eq('id', uid);
+    if(error) alert('เปลี่ยนสิทธิ์ไม่สำเร็จ: ' + error.message);
+    renderUsers();
+  };
+  box.querySelectorAll('select[data-uid]').forEach(s =>
+    s.onchange = () => setRole(s.dataset.uid, s.value));
+  box.querySelectorAll('[data-ok]').forEach(b =>
+    b.onclick = () => setRole(b.dataset.ok, 'collector'));
+}
+
+function addLogout(name, role, note){
+  const mk = () => {
+    const b = document.createElement('button');
+    b.className = 'ghost'; b.textContent = 'ออกจากระบบ';
+    b.onclick = async () => { await SB.auth.signOut(); location.reload() };
+    return b;
+  };
+  const host = document.querySelector('#app-field .fhead span');
+  if(host) host.appendChild(mk());
+  const nav = document.querySelector('#app-admin .navfoot');
+  if(nav){ nav.textContent = name + ' · ' + (role === 'owner' ? 'เจ้าของ' : 'คนเดินเก็บ');
+           nav.appendChild(document.createElement('br')); nav.appendChild(mk()) }
+  if(note){ const s = document.getElementById('syncState');
+            if(s){ s.textContent = note; s.style.color = 'var(--warn)' } }
+}
+
+const SBSTORAGE = {
+  async upload(blob){
+    const name = Date.now()+'-'+Math.random().toString(36).slice(2)+'.jpg';
+    const {error} = await SB.storage.from(BUCKET).upload(name, blob, {contentType:'image/jpeg'});
+    if(error) throw {code:error.statusCode||'error', message:error.message};
+    const {data} = SB.storage.from(BUCKET).getPublicUrl(name);
+    return {id:name, url:data.publicUrl};
+  }
+};
+</script>
+</head>
+<body>
+<title>ระบบเงินกู้รายวัน</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anuphan:wght@500;600;700&family=Noto+Sans+Thai:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: sidebar ledger shell — nav rail left on desktop, scrolling tab strip on phone; each view = summary row then detail table */
+:root{
+  --bg:#f2f5f6; --surface:#ffffff; --surface-2:#eaeff0;
+  --ink:#121a1c; --muted:#5c6b70; --line:#d9e2e4;
+  --accent:#0d7a72; --accent-soft:#d8ecea;
+  --ok:#15803d; --warn:#b06a07; --bad:#b4262a;
+  --font-d:'Anuphan','Noto Sans Thai',system-ui,sans-serif;
+  --font-b:'Noto Sans Thai',system-ui,sans-serif;
+  --font-m:'IBM Plex Mono',ui-monospace,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0c1213; --surface:#131d1f; --surface-2:#1b2729;
+  --ink:#e7eded; --muted:#8fa2a6; --line:#263538;
+  --accent:#3fb3a8; --accent-soft:#17312f;
+  --ok:#4cae63; --warn:#d99a3c; --bad:#e2676a;
+  color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0c1213; --surface:#131d1f; --surface-2:#1b2729;
+  --ink:#e7eded; --muted:#8fa2a6; --line:#263538;
+  --accent:#3fb3a8; --accent-soft:#17312f;
+  --ok:#4cae63; --warn:#d99a3c; --bad:#e2676a;
+  color-scheme:dark}
+
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--font-b);margin:0;font-size:15px;line-height:1.55}
+h1,h2,h3{font-family:var(--font-d);margin:0;text-wrap:balance;letter-spacing:-.01em}
+.num{font-variant-numeric:tabular-nums}
+.mono{font-family:var(--font-m);font-variant-numeric:tabular-nums}
+
+.shell{display:flex;min-height:100%;align-items:stretch}
+/* nav */
+.nav{flex:0 0 212px;background:var(--surface);border-right:1px solid var(--line);display:flex;flex-direction:column;gap:2px;
+  padding-block:20px;padding-left:max(14px,env(safe-area-inset-left,0px));padding-right:14px;position:sticky;top:env(safe-area-inset-top,0px);height:100vh}
+.brand{display:flex;flex-direction:column;gap:2px;margin-bottom:18px;padding-inline:10px}
+.brand b{font-family:var(--font-d);font-size:17px;font-weight:700}
+.brand span{font-size:11.5px;color:var(--muted);letter-spacing:.06em;text-transform:uppercase}
+.nav button{all:unset;box-sizing:border-box;max-width:100%;cursor:pointer;display:flex;align-items:center;gap:9px;padding:9px 11px;border-radius:7px;font-size:14.5px;color:var(--muted);font-weight:500}
+.nav button:hover{background:var(--surface-2);color:var(--ink)}
+.nav button[aria-current="true"]{background:var(--accent-soft);color:var(--accent);font-weight:600}
+.nav button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.nav .dot{width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.55;flex:0 0 auto}
+.navbadge{margin-left:auto;background:var(--warn);color:#fff;font-size:11px;font-weight:700;
+  min-width:19px;height:19px;border-radius:99px;display:inline-flex;align-items:center;justify-content:center;padding:0 5px}
+.navfoot{margin-top:auto;padding-inline:10px;font-size:12px;color:var(--muted)}
+
+main{flex:1;min-width:0;padding-block:22px 48px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));max-width:1100px}
+.head{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:10px;margin-bottom:18px}
+.head h1{font-size:25px}
+.head p{margin:3px 0 0;color:var(--muted);font-size:13.5px}
+.today{font-size:13px;color:var(--muted);font-family:var(--font-m)}
+
+/* tiles */
+.tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:22px;grid-auto-rows:1fr}
+.tiles.four{grid-template-columns:repeat(4,1fr)}
+.tile{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:13px 14px;
+  display:flex;flex-direction:column;justify-content:space-between;gap:4px;min-width:0;min-height:104px}
+.tile .k{font-size:12.5px;color:var(--muted);line-height:1.35}
+.tile .v{font-family:var(--font-d);font-size:23px;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-.02em;line-height:1.15}
+.tile .s{font-size:12px;color:var(--muted);line-height:1.35;min-height:16px}
+@media (max-width:900px){.tiles,.tiles.four{grid-template-columns:repeat(2,1fr)}}
+@media (max-width:460px){.tiles,.tiles.four{grid-template-columns:1fr}}
+.tile.hero{background:var(--accent);border-color:var(--accent);color:#fff}
+.tile.hero .k,.tile.hero .s{color:rgba(255,255,255,.82)}
+
+/* แดชบอร์ด */
+.hero{background:var(--accent);color:#fff;border-radius:12px;padding:18px 20px;margin-bottom:12px;
+  display:grid;gap:10px}
+.hero .lbl{font-size:12.5px;color:rgba(255,255,255,.85);display:flex;justify-content:space-between;
+  gap:10px;flex-wrap:wrap}
+.hero .big{font-family:var(--font-d);font-size:38px;font-weight:700;line-height:1;
+  font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.hero .big small{font-size:17px;font-weight:600;opacity:.8;margin-left:4px}
+.prog{height:9px;border-radius:99px;background:rgba(255,255,255,.28);overflow:hidden}
+.prog i{display:block;height:100%;background:#fff;border-radius:99px}
+.hero .foot{display:flex;gap:18px;flex-wrap:wrap;font-size:13px;color:rgba(255,255,255,.92)}
+.hero .foot b{font-variant-numeric:tabular-nums}
+
+.todo{display:flex;gap:9px;flex-wrap:wrap;margin-bottom:20px}
+.todo button{all:unset;box-sizing:border-box;max-width:100%;cursor:pointer;display:flex;align-items:center;gap:8px;
+  background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--warn);
+  border-radius:9px;padding:9px 13px;font-size:13.5px;color:var(--ink)}
+.todo button:hover{border-color:var(--accent);border-left-color:var(--accent)}
+.todo button b{font-family:var(--font-d);font-size:16px;font-variant-numeric:tabular-nums}
+.todo button.calm{border-left-color:var(--ok)}
+.todo .none{font-size:13.5px;color:var(--muted);display:flex;align-items:center;gap:7px}
+
+.segbar{display:flex;height:26px;border-radius:7px;overflow:hidden;background:var(--surface-2)}
+.segbar div{min-width:2px;transition:width .2s}
+.seglegend{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-top:12px}
+.seglegend div{display:flex;flex-direction:column;gap:2px;font-size:12.5px;color:var(--muted);min-width:0}
+.seglegend b{font-family:var(--font-d);font-size:17px;color:var(--ink);font-variant-numeric:tabular-nums}
+.seglegend i{width:9px;height:9px;border-radius:2px;display:inline-block;margin-right:6px;vertical-align:middle}
+.capline{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:12.5px;
+  color:var(--muted);margin-top:12px;padding-top:11px;border-top:1px solid var(--line)}
+.capline b{color:var(--ink);font-variant-numeric:tabular-nums}
+
+/* cards & tables */
+.card{background:var(--surface);border:1px solid var(--line);border-radius:10px;margin-bottom:20px;overflow:hidden}
+.card>header{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;
+  padding:12px 15px;border-bottom:1px solid var(--line);min-height:52px}
+.card>header h2{font-size:16px}
+.card>header .hint{font-size:12.5px;color:var(--muted)}
+.card .body{padding:15px}
+.scroll{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);white-space:nowrap}
+th{font-size:11.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);font-weight:600;background:var(--surface-2)}
+tbody tr:last-child td{border-bottom:0}
+td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}
+tbody tr.sel{background:var(--accent-soft)}
+tr.clickable{cursor:pointer}
+tr.clickable:hover{background:var(--surface-2)}
+
+.pill{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;padding:2.5px 8px;border-radius:99px;border:1px solid}
+.pill::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+.p-ok{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 35%,transparent);background:color-mix(in srgb,var(--ok) 11%,transparent)}
+.p-warn{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 35%,transparent);background:color-mix(in srgb,var(--warn) 12%,transparent)}
+.p-bad{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 35%,transparent);background:color-mix(in srgb,var(--bad) 11%,transparent)}
+.p-idle{color:var(--muted);border-color:var(--line);background:var(--surface-2)}
+
+.bar{width:104px;height:7px;border-radius:99px;background:var(--surface-2);overflow:hidden;display:inline-block;vertical-align:middle}
+.bar i{display:block;height:100%;background:var(--accent);border-radius:99px}
+
+/* forms */
+.form{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:13px;align-items:end}
+label{display:flex;flex-direction:column;gap:5px;font-size:12.5px;color:var(--muted);min-width:0}
+select,input{font:inherit;font-size:14.5px;color:var(--ink);background:var(--bg);border:1px solid var(--line);
+  border-radius:7px;padding:8px 10px;width:100%;min-width:0;height:40px}
+select:focus,input:focus{outline:2px solid var(--accent);outline-offset:-1px;border-color:var(--accent)}
+button.go{all:unset;box-sizing:border-box;max-width:100%;cursor:pointer;background:var(--accent);color:#fff;font-weight:600;font-size:14.5px;
+  padding:0 18px;height:40px;border-radius:7px;text-align:center;display:inline-flex;align-items:center;justify-content:center}
+button.go:hover{filter:brightness(1.08)}
+button.go:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+button.ghost{all:unset;box-sizing:border-box;max-width:100%;cursor:pointer;border:1px solid var(--line);color:var(--ink);font-size:13.5px;font-weight:500;
+  padding:0 13px;height:34px;border-radius:7px;display:inline-flex;align-items:center;justify-content:center}
+button.ghost:hover{background:var(--surface-2)}
+.split{margin-top:13px;display:flex;flex-wrap:wrap;gap:9px;font-size:13.5px}
+.split div{background:var(--surface-2);border-radius:7px;padding:0 12px;height:36px;display:flex;align-items:center;gap:6px}
+.split b{font-family:var(--font-m);font-variant-numeric:tabular-nums}
+.note{font-size:12.5px;color:var(--muted);margin:10px 0 0}
+.toast{margin-top:12px;font-size:13.5px;color:var(--ok);font-weight:600}
+
+/* detail drawer */
+.detail{display:grid;grid-template-columns:repeat(5,1fr);gap:14px 12px;padding:15px;border-bottom:1px solid var(--line);background:var(--surface-2)}
+.detail>div{min-width:0;display:flex;flex-direction:column;gap:3px}
+.detail .k{font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;line-height:1.3}
+.detail .v{font-family:var(--font-d);font-size:17px;font-weight:600;font-variant-numeric:tabular-nums;line-height:1.3;min-height:23px}
+@media (max-width:900px){.detail{grid-template-columns:repeat(2,1fr)}}
+
+/* chart */
+.chart{width:100%;height:auto;display:block}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12.5px;color:var(--muted);margin-top:8px}
+.legend i{width:10px;height:10px;border-radius:2px;display:inline-block;margin-right:5px}
+
+.filters{display:flex;gap:7px;flex-wrap:wrap}
+.filters button{all:unset;box-sizing:border-box;max-width:100%;cursor:pointer;font-size:13px;padding:5px 11px;border-radius:99px;border:1px solid var(--line);color:var(--muted)}
+.filters button[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+
+.schema{display:grid;grid-template-columns:repeat(auto-fit,minmax(255px,1fr));gap:14px}
+.schema section{border:1px solid var(--line);border-radius:9px;overflow:hidden;min-width:0}
+.schema h3{font-family:var(--font-m);font-size:13px;background:var(--surface-2);padding:9px 12px;border-bottom:1px solid var(--line);font-weight:500}
+.schema ul{margin:0;padding:10px 12px 12px 12px;list-style:none;font-size:13px}
+.schema li{display:flex;justify-content:space-between;gap:10px;padding:3px 0;border-bottom:1px dotted var(--line)}
+.schema li:last-child{border:0}
+.schema li span{font-family:var(--font-m);font-size:11.5px;color:var(--muted);white-space:nowrap}
+.steps{margin:0;padding-left:20px;font-size:14px}
+.steps li{margin-bottom:7px}
+.steps code{font-family:var(--font-m);font-size:12.5px;background:var(--surface-2);padding:1px 5px;border-radius:4px}
+
+.nav button.exit{color:var(--accent);font-weight:600;border:1px solid var(--line);justify-content:center;margin-bottom:10px}
+.nav button.exit:hover{background:var(--accent-soft)}
+
+/* รูปถ่ายประกอบ */
+.shots{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:7px}
+.shot{position:relative;aspect-ratio:3/4;border:1px dashed var(--line);border-radius:9px;background:var(--surface-2);
+  display:flex;align-items:flex-end;justify-content:center;padding:8px;cursor:pointer;overflow:hidden;text-align:center}
+.shot span{font-size:11.5px;color:var(--muted);line-height:1.3;position:relative;z-index:1}
+.shot span i{display:block;font-style:normal;font-size:10px;opacity:.8}
+.shot img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:0}
+.shot.has{border-style:solid;border-color:var(--accent)}
+.shot.has span{background:color-mix(in srgb,#000 55%,transparent);color:#fff;border-radius:5px;padding:2px 6px}
+.shot.busy::after{content:"กำลังอัปโหลด…";position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  background:color-mix(in srgb,#000 45%,transparent);color:#fff;font-size:11.5px;z-index:2}
+.shot.add{align-items:center;border-color:var(--accent);color:var(--accent)}
+.shot.add span{color:var(--accent);font-weight:600}
+.shot .rm{all:unset;box-sizing:border-box;max-width:100%;cursor:pointer;position:absolute;top:4px;right:4px;z-index:2;width:22px;height:22px;border-radius:50%;
+  background:color-mix(in srgb,#000 60%,transparent);color:#fff;font-size:14px;line-height:1;
+  display:flex;align-items:center;justify-content:center}
+
+/* คำขอเปิดลูกค้าใหม่ */
+.app{border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:10px;display:grid;gap:10px}
+.app .hd{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:baseline}
+.app .hd b{font-family:var(--font-d);font-size:15.5px}
+.app .meta{display:flex;gap:14px;flex-wrap:wrap;font-size:13px;color:var(--muted)}
+.app .thumbs{display:flex;gap:8px;flex-wrap:wrap}
+.app .thumbs a{display:block;width:88px;height:64px;border-radius:7px;overflow:hidden;border:1px solid var(--line)}
+.app .thumbs img{width:100%;height:100%;object-fit:cover;display:block}
+.app .thumbs .none{width:88px;height:64px;border:1px dashed var(--line);border-radius:7px;display:flex;
+  align-items:center;justify-content:center;font-size:11px;color:var(--muted)}
+.app .acts{display:flex;gap:8px;flex-wrap:wrap}
+
+/* field app (หน้าบ้าน) */
+.field{max-width:460px;margin:0 auto;padding-block:16px 90px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.fhead{display:flex;justify-content:space-between;align-items:flex-end;gap:10px;margin-bottom:12px}
+.fhead h1{font-size:20px}
+.fhead p{margin:2px 0 0;font-size:12.5px;color:var(--muted)}
+.fsum{background:var(--accent);color:#fff;border-radius:12px;padding:14px 16px;margin-bottom:14px;display:grid;gap:3px}
+.fsum .big{font-family:var(--font-d);font-size:30px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.fsum .k{font-size:12.5px;color:rgba(255,255,255,.85)}
+.fsum .row{display:flex;gap:16px;font-size:12.5px;color:rgba(255,255,255,.9);margin-top:4px}
+.fcard{background:var(--surface);border:1px solid var(--line);border-radius:11px;margin-bottom:9px;overflow:hidden}
+.fcard.done{opacity:.72}
+.fcard>.top{display:flex;gap:10px;align-items:center;padding:12px 13px;cursor:pointer;min-height:82px}
+.fcard .who{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.fcard .who b{font-family:var(--font-d);font-size:15.5px;font-weight:600;display:block}
+.fcard .who small{display:block;font-size:12px;color:var(--muted);font-family:var(--font-m);margin-top:1px}
+.fcard .amt{text-align:right;flex:0 0 96px;width:96px}
+.fcard .amt b{font-family:var(--font-d);font-size:19px;font-weight:600;font-variant-numeric:tabular-nums;display:block}
+.fcard .amt small{font-size:11.5px;color:var(--muted)}
+.fentry{border-top:1px solid var(--line);padding:13px;display:grid;gap:10px;background:var(--surface-2)}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chips button{all:unset;box-sizing:border-box;max-width:100%;cursor:pointer;font-size:13px;padding:0 11px;height:34px;border-radius:8px;
+  border:1px solid var(--line);background:var(--surface);color:var(--ink);display:inline-flex;align-items:center}
+.chips button:hover{border-color:var(--accent);color:var(--accent)}
+.frow{display:flex;gap:8px}
+.frow input{flex:1}
+.frow button{flex:0 0 auto}
+.fmini{font-size:12.5px;color:var(--muted)}
+.fbar{position:fixed;left:0;right:0;bottom:0;background:var(--surface);border-top:1px solid var(--line);
+  display:flex;align-items:center;gap:12px;
+  padding-top:11px;padding-bottom:calc(11px + env(safe-area-inset-bottom,0px));
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.fbar .t{flex:1;min-width:0;font-size:12.5px;color:var(--muted)}
+.fbar .t b{display:block;font-family:var(--font-d);font-size:18px;color:var(--ink);font-variant-numeric:tabular-nums}
+.ftoast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(78px + env(safe-area-inset-bottom,0px));
+  background:var(--ink);color:var(--bg);font-size:13.5px;font-weight:500;padding:9px 16px;border-radius:99px;max-width:88vw;text-align:center;z-index:5}
+.ok-mark{color:var(--ok);font-size:12.5px;font-weight:600}
+
+/* แถบเลือกรอบที่กำลังบันทึก */
+.roundbar{display:flex;align-items:center;gap:7px;margin-bottom:10px}
+.roundbar button.ghost{flex:0 0 auto;height:44px;padding:0 11px;font-size:15px}
+.roundbar button[disabled]{opacity:.35;pointer-events:none}
+.rdate{flex:1;min-width:0;background:var(--surface);border:1px solid var(--line);border-radius:9px;
+  padding:5px 10px;gap:0}
+.rdate span{font-size:10.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
+.rdate input{border:0;background:none;padding:0;height:22px;font-family:var(--font-d);font-weight:600;font-size:15px}
+.rdate input:focus{outline:none}
+.warnbar{background:color-mix(in srgb,var(--warn) 13%,transparent);border:1px solid color-mix(in srgb,var(--warn) 38%,transparent);
+  color:var(--warn);border-radius:9px;padding:9px 12px;font-size:13px;font-weight:600;margin-bottom:10px}
+.backtag{display:inline-block;font-size:11px;font-weight:600;color:var(--warn);
+  border:1px solid color-mix(in srgb,var(--warn) 38%,transparent);border-radius:99px;padding:1px 7px;margin-left:6px}
+
+/* ปฏิทินติ๊กเก็บเงิน */
+.calhead{display:flex;justify-content:space-between;align-items:baseline;font-size:12.5px;color:var(--muted)}
+.cal{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;margin-top:6px}
+.cal .d{border:1px solid var(--line);border-radius:8px;background:var(--surface);padding:7px 4px;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;cursor:pointer;min-width:0}
+.cal .d u{text-decoration:none;font-size:9.5px;color:var(--muted);letter-spacing:.02em}
+.cal .d b{font-family:var(--font-m);font-size:13px;font-weight:500}
+.cal .d i{font-size:10.5px;font-style:normal;color:var(--muted);line-height:1.2;font-variant-numeric:tabular-nums}
+.cal .d.pend u,.cal .d.appr u{color:rgba(255,255,255,.8)}
+.cal .d.part{border-color:var(--warn);border-width:1.5px;background:color-mix(in srgb,var(--warn) 14%,transparent)}
+.cal .d.part i{color:var(--warn);font-weight:600}
+/* ปฏิทินรายวันบนการ์ดผ่อน */
+.cald{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-top:6px}
+.cald .wk{font-size:10.5px;color:var(--muted);text-align:center;letter-spacing:.03em}
+.cald .d{aspect-ratio:1/1;border:1px solid var(--line);border-radius:6px;background:var(--surface);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0;min-width:0}
+.cald .d b{font-family:var(--font-m);font-size:11.5px;font-weight:500}
+.cald .d i{font-size:8.5px;font-style:normal;color:var(--muted);line-height:1}
+.cald .d.sat{border-color:var(--ink);border-width:1.5px;cursor:pointer}
+.cald .d.pend{background:var(--accent);border-color:var(--accent);color:#fff}
+.cald .d.appr{background:var(--ok);border-color:var(--ok);color:#fff}
+.cald .d.pend i,.cald .d.appr i{color:#fff;font-size:11px}
+.cald .d.off{opacity:.4}
+.cald .d.gap{border:0;background:none}
+.cal .d.pend{background:var(--accent);border-color:var(--accent);color:#fff}
+.cal .d.pend i{color:rgba(255,255,255,.85)}
+.cal .d.appr{background:var(--ok);border-color:var(--ok);color:#fff}
+.cal .d.appr i{color:rgba(255,255,255,.85)}
+.cal .d.off{opacity:.38;cursor:default}
+.cal .d.gap{border:0;background:none;cursor:default}
+.callegend{display:flex;gap:12px;flex-wrap:wrap;font-size:11.5px;color:var(--muted);margin-top:7px}
+.callegend i{width:9px;height:9px;border-radius:2px;display:inline-block;margin-right:4px}
+
+/* การ์ดผ่อน */
+.sheet{position:fixed;inset:0;z-index:20;overflow:auto;display:flex;justify-content:center;align-items:flex-start;
+  background:color-mix(in srgb,#000 55%,transparent);
+  padding-block:calc(16px + env(safe-area-inset-top,0px)) calc(24px + env(safe-area-inset-bottom,0px));
+  padding-left:max(12px,env(safe-area-inset-left,0px));padding-right:max(12px,env(safe-area-inset-right,0px))}
+.sheet .inner{background:var(--surface);border-radius:14px;width:100%;max-width:470px;overflow:hidden}
+.sheetbar{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.sheetbar b{font-family:var(--font-d);font-size:16px}
+.sheetbar span{display:flex;gap:7px}
+.cslines{display:grid;grid-template-columns:1fr 1fr;gap:11px;padding:14px}
+.cslines>div{min-width:0;display:flex;flex-direction:column;gap:2px}
+.cslines .k{font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);line-height:1.3}
+.cslines .v{font-family:var(--font-d);font-size:15.5px;font-weight:600;font-variant-numeric:tabular-nums;line-height:1.3;min-height:21px}
+.csblock{padding:0 14px 16px}
+
+/* การ์ดผ่อน */
+.cardtop{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px}
+.cardtop b{font-family:var(--font-d);font-size:18px;display:block}
+.cardtop span.mono{font-size:12px;color:var(--muted)}
+.csblock .two{display:flex;gap:10px;margin-bottom:10px}
+.csblock .two>div{flex:1;border-radius:10px;padding:12px 13px;min-width:0}
+.csblock .two .paid{background:var(--accent-soft)}
+.csblock .two .left{background:var(--accent);color:#fff}
+.csblock .two .k{font-size:11.5px;opacity:.9;margin-bottom:2px}
+.csblock .two .v{font-family:var(--font-d);font-size:24px;font-weight:700;
+  font-variant-numeric:tabular-nums;line-height:1.1}
+.csblock .two .paid .v{color:var(--accent)}
+.csblock .two .s{font-size:11px;opacity:.85;margin-top:3px}
+.csblock .pbar{height:8px;border-radius:99px;background:var(--surface-2);overflow:hidden;margin-bottom:12px}
+.csblock .pbar i{display:block;height:100%;background:var(--accent);border-radius:99px}
+.nextline{background:var(--surface-2);border-radius:9px;padding:10px 12px;font-size:13.5px;margin-bottom:12px}
+.nextline b{font-family:var(--font-d);font-size:17px;font-variant-numeric:tabular-nums}
+.facts{display:flex;flex-wrap:wrap;gap:7px 14px;font-size:12.5px;color:var(--muted)}
+.facts b{color:var(--ink);font-variant-numeric:tabular-nums}
+.daybox{border-top:1px solid var(--line)}
+.daybox summary{cursor:pointer;padding:12px 15px;font-size:13px;color:var(--muted);list-style:none}
+.daybox summary::-webkit-details-marker{display:none}
+.daybox summary::before{content:"▸ ";color:var(--accent)}
+.daybox[open] summary::before{content:"▾ "}
+
+/* สลิปส่งลูกค้า — สีคงที่ ไม่อิงธีม เพื่อให้แคปแล้วอ่านง่ายทุกเครื่อง */
+.slip{background:#ffffff;color:#14201f;border:1px solid #dbe3e4;border-radius:14px;
+  overflow:hidden;font-family:var(--font-b);line-height:1.45}
+.slip .sh{background:#0d7a72;color:#fff;padding:13px 18px;display:flex;
+  justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.slip .sh b{font-family:var(--font-d);font-size:16.5px;font-weight:700}
+.slip .sh i{font-style:normal;font-size:11.5px;color:rgba(255,255,255,.85)}
+.slip .body{padding:16px 18px 18px}
+.slip .who{font-family:var(--font-d);font-size:21px;font-weight:700;line-height:1.25}
+.slip .cno{font-size:11.5px;color:#64757a;font-family:var(--font-m);margin-bottom:14px}
+
+.slip .g4{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:#e4ebec;
+  border:1px solid #e4ebec;border-radius:10px;overflow:hidden;margin-bottom:10px}
+.slip .g4 div{background:#fff;padding:9px 8px;text-align:center;min-width:0}
+.slip .g4 span{display:block;font-size:10px;color:#6b7b80;margin-bottom:2px;white-space:nowrap}
+.slip .g4 b{font-family:var(--font-d);font-size:15px;font-variant-numeric:tabular-nums}
+
+.slip .period{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;
+  font-size:12px;color:#546367;background:#f4f8f8;border-radius:9px;padding:8px 11px;margin-bottom:14px}
+.slip .period em{font-style:normal;background:#0d7a72;color:#fff;border-radius:99px;
+  padding:2px 9px;font-size:11px;font-weight:600;white-space:nowrap}
+
+.slip .two{display:flex;gap:10px;margin-bottom:9px}
+.slip .two>div{flex:1;border-radius:11px;padding:13px 14px;min-width:0}
+.slip .paid{background:#eef5f3;border:1px solid #d6e7e2}
+.slip .left{background:#0d7a72;color:#fff}
+.slip .two .k{font-size:11.5px;opacity:.9;margin-bottom:3px}
+.slip .two .v{font-family:var(--font-d);font-size:26px;font-weight:700;
+  font-variant-numeric:tabular-nums;line-height:1.05;letter-spacing:-.01em}
+.slip .paid .v{color:#0d7a72}
+.slip .two .s{font-size:11px;opacity:.82;margin-top:3px}
+.slip .pbar{height:9px;border-radius:99px;background:#e6eded;overflow:hidden}
+.slip .pbar i{display:block;height:100%;background:#0d7a72;border-radius:99px}
+.slip .pct{font-size:11.5px;color:#6b7b80;margin:5px 0 14px;text-align:right}
+
+.slip .next{background:#fff7ea;border:1px solid #f0d9ae;border-radius:11px;
+  padding:11px 14px;display:flex;justify-content:space-between;align-items:center;gap:10px;
+  flex-wrap:wrap;color:#8a5a08;margin-bottom:16px}
+.slip .next span{font-size:12.5px}
+.slip .next b{font-family:var(--font-d);font-size:20px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.slip .next.done{background:#eef5f3;border-color:#bcdcd4;color:#0d7a72;justify-content:center}
+
+.slip .rows{font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:#6b7b80;
+  font-weight:600;margin-bottom:7px}
+.slip table{width:100%;border-collapse:collapse;font-size:13px}
+.slip th,.slip td{padding:8px 10px;text-align:left;font-variant-numeric:tabular-nums;white-space:nowrap}
+.slip th{font-size:10.5px;letter-spacing:.04em;color:#6b7b80;background:#f4f8f8;font-weight:600}
+.slip tbody tr:nth-child(even) td{background:#fafcfc}
+.slip tbody td{border-top:1px solid #edf2f2}
+.slip tfoot td{border-top:2px solid #0d7a72;font-weight:700;background:#fff}
+.slip td.r,.slip th.r{text-align:right}
+.slip .ft{margin-top:14px;padding-top:11px;border-top:1px dashed #dde5e6;
+  font-size:10.5px;color:#8a989c;text-align:center}
+.subhead{padding:14px 15px 7px;font-size:11.5px;letter-spacing:.05em;text-transform:uppercase;
+  color:var(--muted);font-weight:600;border-top:1px solid var(--line)}
+
+@media (max-width:760px){
+  .shell{display:block}
+  .nav{position:static;height:auto;flex:none;flex-direction:row;overflow-x:auto;border-right:0;border-bottom:1px solid var(--line);
+    gap:6px;padding-block:10px;align-items:center}
+  .brand{display:none}
+  .navfoot{display:none}
+  .nav button{white-space:nowrap}
+  main{padding-block:16px 40px}
+  .head h1{font-size:21px}
+  th,td{padding:8px 10px}
+}
+</style>
+
+<div class="shell" id="app-admin" hidden>
+  <nav class="nav" aria-label="เมนูหลัก">
+    <div class="brand"><b>เงินกู้รายวัน</b><span>หลังบ้าน · ปีบัญชี 2569</span></div>
+    <button id="toField" class="exit">← หน้าเก็บเงิน</button>
+    <button data-view="dash" aria-current="true"><i class="dot"></i>ภาพรวม</button>
+    <button data-view="cust"><i class="dot"></i>ลูกค้า &amp; สัญญา</button>
+    <button data-view="inbox"><i class="dot"></i>จากหน้าบ้าน<b id="navPend" class="navbadge" hidden></b></button>
+    <button data-view="collect"><i class="dot"></i>เก็บเงิน</button>
+    <button data-view="loan"><i class="dot"></i>อนุมัติลูกค้าใหม่<b id="navApp" class="navbadge" hidden></b></button>
+    <button data-view="expense"><i class="dot"></i>ค่าใช้จ่าย</button>
+    <button data-view="rate"><i class="dot"></i>เรทผ่อน</button>
+    <button data-view="profit"><i class="dot"></i>กำไร &amp; ปันผล</button>
+    <button data-view="users" hidden><i class="dot"></i>ผู้ใช้งาน<b id="navUser" class="navbadge" hidden></b></button>
+    <button data-view="schema"><i class="dot"></i>โครงสร้างระบบ</button>
+    <div class="navfoot">ข้อมูลในหน้านี้เป็นตัวอย่างจากไฟล์ Excel</div>
+  </nav>
+
+  <main>
+    <!-- ภาพรวม -->
+    <section id="v-dash">
+      <div class="head">
+        <div><h1>ภาพรวมกิจการ</h1><p>สถานะเงินทุน ลูกหนี้ และกำไรสะสม ณ วันนี้</p></div>
+        <div class="today" id="todayLabel"></div>
+      </div>
+      <div id="dashRound"></div>
+      <div class="tiles" id="dashTiles"></div>
+      <div id="dashTodo"></div>
+
+      <div class="card">
+        <header><h2>เงินทุนอยู่ที่ไหน</h2><span class="hint">เทียบกับเงินทุนตั้งต้น</span></header>
+        <div class="body" id="dashMix"></div>
+      </div>
+
+      <div class="card">
+        <header><h2>สุขภาพพอร์ต</h2><span class="hint">แบ่งตามเงินต้นที่ยังอยู่กับลูกค้า</span></header>
+        <div class="body" id="dashHealth"></div>
+      </div>
+
+      <div class="card">
+        <header><h2>ยอดเก็บ 8 รอบล่าสุด</h2><span class="hint">รอบเก็บทุกวันเสาร์ · แยกเงินต้นกับดอกเบี้ย</span></header>
+        <div class="body"><div id="chartWrap"></div>
+          <div class="legend"><span><i style="background:var(--accent)"></i>เงินต้น</span><span><i style="background:var(--warn)"></i>กำไร (ดอก)</span></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <header><h2>ต้องเก็บรอบนี้</h2><span class="hint">เรียงตามจำนวนรอบที่ค้าง</span></header>
+        <div class="scroll"><table id="dueTable"></table></div>
+      </div>
+    </section>
+
+    <!-- ลูกค้า -->
+    <section id="v-cust" hidden>
+      <div class="head">
+        <div><h1>ลูกค้า &amp; สัญญา</h1><p>กดที่แถวเพื่อดูรายละเอียดสัญญาและประวัติการจ่าย</p></div>
+        <div class="filters" id="custFilters">
+          <button data-f="all" aria-pressed="true">ทั้งหมด</button>
+          <button data-f="active" aria-pressed="false">ผ่อนอยู่</button>
+          <button data-f="late" aria-pressed="false">ค้างชำระ</button>
+          <button data-f="closed" aria-pressed="false">ปิดสัญญาแล้ว</button>
+          <button data-f="pending" aria-pressed="false">รอเริ่ม</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="scroll"><table id="custTable"></table></div>
+      </div>
+      <div class="card" id="custDetailCard" hidden>
+        <header><h2 id="cdName"></h2><span style="display:flex;gap:7px;flex-wrap:wrap">
+          <button class="ghost" id="cdSlip">สลิปส่งลูกค้า</button>
+          <button class="ghost" id="cdCard">การ์ดผ่อน / ปริ้น</button>
+          <button class="ghost" id="cdClose">ปิด</button></span></header>
+        <div class="detail" id="cdDetail"></div>
+        <div class="subhead">สรุปรายรอบ · ต้องเก็บเทียบกับเก็บได้จริง</div>
+        <div class="scroll"><table id="cdRounds"></table></div>
+        <div class="subhead">รายการรับเงินแต่ละครั้ง</div>
+        <div class="scroll"><table id="cdHistory"></table></div>
+      </div>
+    </section>
+
+    <!-- จากหน้าบ้าน -->
+    <section id="v-inbox" hidden>
+      <div class="head">
+        <div><h1>รายการจากหน้าบ้าน</h1><p>ยอดที่คนเดินเก็บบันทึกเข้ามา ต้องกดอนุมัติก่อนจึงเข้าบัญชีและคิดกำไร</p></div>
+      </div>
+      <div class="tiles four" id="inboxTiles"></div>
+      <div class="card">
+        <header><h2>รออนุมัติ</h2><span class="hint">ตรวจยอดกับเงินสดที่รับมอบก่อนกดอนุมัติ</span></header>
+        <div class="scroll"><table id="pendTable"></table></div>
+      </div>
+      <div class="card">
+        <header><h2>เก็บไม่ได้</h2><span class="hint">เหตุผลที่คนเดินเก็บบันทึกไว้</span></header>
+        <div class="scroll"><table id="visitTable"></table></div>
+      </div>
+      <div class="card">
+        <header><h2>ปิดรอบนำส่งเงิน</h2><span class="hint">ยอดที่คนเดินเก็บแจ้งปิดรอบในแต่ละวัน</span></header>
+        <div class="scroll"><table id="handTable"></table></div>
+      </div>
+    </section>
+
+    <!-- เก็บเงิน -->
+    <section id="v-collect" hidden>
+      <div class="head"><div><h1>บันทึกเก็บเงิน</h1><p>ใส่ยอดที่เก็บได้ ระบบตัดเงินต้นกับดอกเบี้ยตามสัดส่วนสัญญาให้เอง</p></div></div>
+      <div class="card">
+        <header><h2>รายการใหม่</h2><span class="hint">ย้อนวันที่ได้ · รายการจากหลังบ้านถือว่าอนุมัติแล้วทันที</span></header>
+        <div class="body">
+          <div class="form">
+            <label>สัญญา<select id="cSel"></select></label>
+            <label>วันที่เก็บ<input type="date" id="cDate"></label>
+            <label>ยอดเงินที่เก็บได้ (บาท)<input type="number" id="cAmt" min="0" step="50" placeholder="0"></label>
+            <button class="go" id="cSave">บันทึกการเก็บเงิน</button>
+          </div>
+          <div class="split" id="cSplit"></div>
+          <p class="note" id="cNote"></p>
+          <div class="toast" id="cToast" hidden></div>
+        </div>
+      </div>
+      <div class="card">
+        <header><h2>ประวัติเดินบัญชี</h2><span class="hint">รายการล่าสุดอยู่บนสุด</span></header>
+        <div class="scroll"><table id="ledgerTable"></table></div>
+      </div>
+    </section>
+
+    <!-- ปล่อยกู้ -->
+    <section id="v-loan" hidden>
+      <div class="head"><div><h1>อนุมัติลูกค้าใหม่</h1>
+        <p>คำขอที่คนเดินเก็บส่งมาจากหน้าบ้าน ตรวจรูปและปรับยอดได้ก่อนกดอนุมัติ</p></div></div>
+      <div class="tiles" id="loanTiles"></div>
+      <div class="card">
+        <header><h2>รอตรวจและอนุมัติ</h2><span class="hint">อนุมัติแล้วสัญญาเริ่มนับรอบเก็บทันที</span></header>
+        <div class="body" id="approveBox"></div>
+      </div>
+      <div class="card">
+        <header><h2>เปิดสัญญาเอง</h2><span class="hint">ใช้เมื่อเจ้าของปล่อยกู้เองโดยไม่ผ่านหน้าบ้าน · ไม่มีรูปประกอบ</span></header>
+        <div class="body">
+          <div class="form">
+            <label>ชื่อลูกค้า<input id="nName" placeholder="ชื่อ-นามสกุล"></label>
+            <label>เบอร์โทร<input id="nPhone" placeholder="08x-xxx-xxxx"></label>
+            <label>แผนผ่อน<select id="nPlan">
+              <option>28 วัน</option><option selected>60 วัน</option>
+              <option value="custom">กำหนดเอง</option></select></label>
+            <label>ยอดกู้<select id="nAmt"></select></label>
+            <label id="nAmtC" hidden>ยอดกู้ (บาท)<input type="number" id="nAmtCustom" min="500" step="500" value="12000"></label>
+            <label id="nDaysC" hidden>จำนวนวัน<input type="number" id="nDays" min="7" step="1" value="45"></label>
+            <label id="nIntC" hidden>ดอกเบี้ยรวม<input type="number" id="nInt" min="0" step="100" value="1800"></label>
+            <label>วันเริ่มสัญญา<input type="date" id="nStart"></label>
+            <label>หักงวดแรก<select id="nUpf"></select></label>
+            <button class="go" id="nSave">เปิดสัญญา</button>
+          </div>
+          <div class="split" id="nSplit"></div>
+          <p class="note" id="nCash"></p>
+          <div class="toast" id="nToast" hidden></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ค่าใช้จ่าย -->
+    <section id="v-expense" hidden>
+      <div class="head"><div><h1>ค่าใช้จ่าย</h1><p>ค่าใช้จ่ายในการเดินเก็บและค่าดำเนินการ หักออกจากกำไรก่อนปันผล</p></div></div>
+      <div class="card">
+        <div class="body">
+          <div class="form">
+            <label>วันที่<input type="date" id="eDate"></label>
+            <label>รายการ<input id="eItem" placeholder="เช่น ค่าน้ำมัน"></label>
+            <label>ยอดเงิน<input type="number" id="eAmt" min="0" step="10" placeholder="0"></label>
+            <button class="go" id="eSave">บันทึก</button>
+          </div>
+          <div class="toast" id="eToast" hidden></div>
+        </div>
+        <div class="scroll"><table id="expTable"></table></div>
+      </div>
+    </section>
+
+    <!-- เรท -->
+    <section id="v-rate" hidden>
+      <div class="head"><div><h1>เรทการผ่อนชำระ</h1><p>ตารางเรทที่ใช้อ้างอิงทั้งระบบ แก้ที่นี่แล้วหน้าอื่นคิดตามทันที</p></div></div>
+      <div class="card">
+        <header><h2>ตารางเรท</h2><span class="hint">ดอกเบี้ย 12% ต่อรอบ 28 วัน และ 20% ต่อรอบ 60 วัน</span></header>
+        <div class="scroll"><table id="rateTable"></table></div>
+      </div>
+      <div class="card">
+        <header><h2>เครื่องคิดเลขค่างวด</h2><span class="hint">ใช้ตอบลูกค้าหน้างาน</span></header>
+        <div class="body">
+          <div class="form">
+            <label>ยอดกู้<input type="number" id="calcAmt" value="12000" min="1000" step="1000"></label>
+            <label>แผน<select id="calcPlan"><option>28 วัน</option><option selected>60 วัน</option></select></label>
+          </div>
+          <div class="split" id="calcOut"></div>
+          <p class="note">ยอดที่ไม่มีในตารางเรท ระบบเทียบสัดส่วนจากเรทที่ใกล้ที่สุดให้</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- กำไร -->
+    <section id="v-profit" hidden>
+      <div class="head"><div><h1>กำไร &amp; ปันผล</h1><p>สรุปรายเดือนของปี 2569 และส่วนแบ่งของหุ้นส่วน</p></div></div>
+      <div class="tiles four" id="profitTiles"></div>
+      <div class="card">
+        <header><h2>สรุปรายเดือน 2569</h2><span class="hint">เดือนที่ยังไม่มีรายการเว้นว่างไว้</span></header>
+        <div class="scroll"><table id="monthTable"></table></div>
+      </div>
+      <div class="card">
+        <header><h2>ส่วนแบ่งหุ้นส่วน</h2><span class="hint">ปรับสัดส่วนได้ตามที่ตกลงกัน</span></header>
+        <div class="body">
+          <div class="form">
+            <label>Dgame (ลงทุน 200,000) %<input type="number" id="shareA" value="50" min="0" max="100"></label>
+            <label>เปี๊ยก (ผู้ดำเนินงาน) %<input type="number" id="shareB" value="50" min="0" max="100" disabled></label>
+          </div>
+          <div class="split" id="shareOut"></div>
+          <p class="note">คิดจากกำไรสุทธิ = ดอกเบี้ยที่เก็บได้จริง − ค่าใช้จ่าย − หนี้เสียที่ตัดออก</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ผู้ใช้งาน (เฉพาะเวอร์ชันที่ต่อ Supabase) -->
+    <section id="v-users" hidden>
+      <div class="head"><div><h1>ผู้ใช้งาน</h1>
+        <p>คนที่สมัครเข้ามาต้องได้รับอนุมัติและกำหนดสิทธิ์ก่อนถึงจะใช้งานได้</p></div></div>
+      <div class="card"><div class="body" id="userBox">หน้านี้ใช้ได้เฉพาะเวอร์ชันที่ต่อ Supabase</div></div>
+    </section>
+
+    <!-- โครงสร้าง -->
+    <section id="v-schema" hidden>
+      <div class="head"><div><h1>โครงสร้างระบบ</h1><p>ตารางข้อมูลและสูตรคิด สำหรับเอาไปทำเป็นระบบจริงบน Supabase</p></div></div>
+      <div class="card">
+        <header><h2>ตารางข้อมูล</h2><span class="hint">6 ตาราง แทน 5 ชีทเดิม</span></header>
+        <div class="body"><div class="schema" id="schemaBox"></div></div>
+      </div>
+      <div class="card">
+        <header><h2>สูตรที่ระบบคิดให้</h2><span class="hint">แทนสูตร Excel ที่ขึ้น #N/A</span></header>
+        <div class="body">
+          <ol class="steps">
+            <li>ค่างวดต่อวัน ดอกเบี้ยรวม และจำนวนรอบ ดึงจากตาราง <code>rate_plans</code> ตอนเปิดสัญญา แล้วบันทึกลงสัญญาเลย ไม่ต้อง lookup ย้อนหลัง</li>
+            <li>รอบเก็บเงินสร้างล่วงหน้าทั้งสัญญา: <code>รอบแรก = วันเสาร์ถัดจากวันเริ่มสัญญา</code> แล้วบวก 7 วันไปเรื่อย ๆ รอบละ 7 งวด (รอบสุดท้ายเหลือเท่าไหร่เก็บเท่านั้น)</li>
+            <li>แต่ละครั้งที่เก็บเงิน ตัดเงินต้นกับดอกตามสัดส่วนคงที่ของสัญญา: <code>เงินต้น = ยอดเก็บ × (ยอดกู้ ÷ ยอดต้องจ่ายทั้งหมด)</code> ส่วนที่เหลือเป็นกำไร</li>
+            <li>จ่ายมาแล้วกี่งวด = <code>ยอดเก็บสะสม ÷ ค่างวดต่อวัน</code> — จ่ายไม่เต็มรอบก็คิดเป็นเศษงวดได้</li>
+            <li>ค้างกี่รอบ = <code>(งวดของรอบที่ถึงกำหนดแล้ว − งวดที่จ่ายแล้ว) ÷ 7</code> ปัดขึ้น นับเฉพาะรอบที่วันเสาร์ผ่านไปแล้ว</li>
+            <li>สถานะ: ค้าง 0 รอบ = ปกติ, 1 รอบ = เฝ้าระวัง, เกิน 1 รอบ = เสี่ยง, เก็บครบ = ปิดสัญญา, ค้างเกิน 4 รอบ = ตัดเป็นหนี้เสีย</li>
+            <li>เงินสดพร้อมปล่อย = <code>เงินทุน − ยอดปล่อยไปแล้ว + ยอดเก็บสะสม − ค่าใช้จ่าย − ปันผลที่จ่ายแล้ว</code></li>
+            <li>สินทรัพย์ทั้งหมด = <code>เงินสดพร้อมปล่อย + เงินต้นคงเหลือในมือลูกค้า</code></li>
+          </ol>
+        </div>
+      </div>
+      <div class="card">
+        <header><h2>สิ่งที่ควรมีในระบบจริง</h2><span class="hint">ต่อยอดจากต้นแบบนี้</span></header>
+        <div class="body">
+          <ol class="steps">
+            <li>ล็อกอินแยกสิทธิ์ เจ้าของเห็นกำไรและปันผล คนเดินเก็บเห็นแค่หน้าบ้าน — ในต้นแบบนี้ใช้ปุ่มสลับโหมดแทนไปก่อน</li>
+            <li>บันทึกพิกัด GPS กับเวลาจริงตอนกดบันทึกรับเงิน เอาไว้ตรวจย้อนหลังว่าไปถึงหน้าบ้านลูกค้าจริง</li>
+            <li>โหมดออฟไลน์ เก็บรายการไว้ในเครื่องก่อนแล้วส่งเมื่อมีเน็ต เพราะบางพื้นที่สัญญาณไม่ถึง</li>
+            <li>ส่งสลิปสรุปยอดเข้า LINE ให้ลูกค้าอัตโนมัติหลังบันทึกการจ่าย</li>
+            <li>แจ้งเตือนเช้าวันเสาร์: รายชื่อที่ต้องเก็บรอบนี้ ยอดรวมที่ควรได้ ใครค้างเกิน 1 รอบ สัญญาไหนใกล้หมด</li>
+            <li>เก็บทุกการแก้ไขเป็น log ย้อนหลังได้ ว่าใครแก้ยอดอะไรเมื่อไหร่</li>
+            <li>ปุ่มออกรายงานเป็น Excel หน้าตาเดิม เอาไว้ใช้เทียบช่วงเปลี่ยนระบบ</li>
+          </ol>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<!-- หน้าบ้าน: หน้าจอคนเดินเก็บเงิน -->
+<div class="field" id="app-field">
+  <div class="fhead">
+    <div><h1>รอบเก็บวันเสาร์</h1><p id="fDateLabel"></p></div>
+    <span style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
+      <button class="ghost" id="fSetup">ตั้งชื่อผู้เก็บ</button>
+      <button class="ghost" id="toAdmin">หลังบ้าน</button>
+    </span>
+  </div>
+
+  <div class="roundbar">
+    <button class="ghost" id="rPrev" title="รอบก่อนหน้า">◀</button>
+    <label class="rdate"><span>รอบที่กำลังบันทึก</span><input type="date" id="fDate"></label>
+    <button class="ghost" id="rNext" title="รอบถัดไป">▶</button>
+    <button class="ghost" id="rNow">ล่าสุด</button>
+  </div>
+  <div class="warnbar" id="rWarn" hidden></div>
+
+  <div class="fsum" id="fSum"></div>
+  <div class="fmini" id="syncState" style="margin:-6px 0 12px">กำลังเชื่อมต่อ…</div>
+
+  <button class="go" id="fNew" style="display:block;width:100%;margin-bottom:12px">+ เปิดลูกค้าใหม่</button>
+
+  <div class="form" id="fSetupBox" hidden style="margin-bottom:14px">
+    <label>ชื่อผู้เก็บเงิน<input id="fName" placeholder="เช่น เปี๊ยก"></label>
+  </div>
+
+  <input id="fSearch" placeholder="ค้นหาชื่อ เบอร์โทร หรือเลขที่สัญญา" style="margin-bottom:10px">
+
+  <div class="filters" id="fFilters" style="margin-bottom:12px">
+    <button data-f="today" aria-pressed="true">รอบนี้ยังไม่เก็บ</button>
+    <button data-f="late" aria-pressed="false">ค้างรอบก่อน</button>
+    <button data-f="done" aria-pressed="false">เก็บแล้วรอบนี้</button>
+    <button data-f="all" aria-pressed="false">ทั้งหมด</button>
+  </div>
+
+  <div id="fList"></div>
+
+  <div class="fbar">
+    <div class="t">เงินสดที่ต้องนำส่ง<b id="fCash">0</b></div>
+    <button class="go" id="fClose">ปิดรอบส่งยอด</button>
+  </div>
+</div>
+
+<!-- เปิดลูกค้าใหม่ (หน้าบ้าน) -->
+<div class="sheet" id="newSheet" hidden>
+  <div class="inner">
+    <header class="sheetbar"><b>เปิดลูกค้าใหม่</b><span><button class="ghost" id="nsClose">ปิด</button></span></header>
+    <div class="csblock" style="padding-top:14px;display:grid;gap:12px">
+      <label>ชื่อ-นามสกุล<input id="asName" placeholder="ชื่อลูกค้า"></label>
+      <label>เบอร์โทร<input id="asPhone" inputmode="tel" placeholder="08x-xxx-xxxx"></label>
+      <div id="asOld" hidden></div>
+      <div class="form" style="gap:10px">
+        <label>แผนผ่อน<select id="asPlan">
+          <option>28 วัน</option><option selected>60 วัน</option>
+          <option value="custom">กำหนดเอง</option></select></label>
+        <label>ยอดกู้<select id="asAmt"></select></label>
+        <label id="asAmtC" hidden>ยอดกู้ (บาท)<input type="number" id="asAmtCustom" min="500" step="500" value="12000"></label>
+        <label id="asDaysC" hidden>จำนวนวัน<input type="number" id="asDays" min="7" step="1" value="45"></label>
+        <label id="asIntC" hidden>ดอกเบี้ยรวม (บาท)<input type="number" id="asInt" min="0" step="100" value="1800"></label>
+      </div>
+      <div class="form" style="gap:10px">
+        <label>วันเริ่มสัญญา (วันเสาร์)<input type="date" id="asStart"></label>
+        <label>หักงวดแรกตอนปล่อยเงิน<select id="asUpf"></select></label>
+      </div>
+      <div class="split" id="asCalc"></div>
+
+      <div>
+        <div class="calhead"><span>รูปถ่ายประกอบ</span><span>กดเพื่อถ่ายหรือเลือกรูป</span></div>
+        <div class="shots">
+          <label class="shot" id="shot-id"><span>บัตรประชาชน<i>จำเป็น</i></span>
+            <input type="file" accept="image/*" capture="environment" data-shot="id" hidden></label>
+          <label class="shot" id="shot-home"><span>รูปบ้าน<i>จำเป็น</i></span>
+            <input type="file" accept="image/*" capture="environment" data-shot="home" hidden></label>
+          <label class="shot" id="shot-shop"><span>รูปร้าน<i>ไม่บังคับ</i></span>
+            <input type="file" accept="image/*" capture="environment" data-shot="shop" hidden></label>
+          <label class="shot add" id="shot-more"><span>+ เพิ่มรูป<i>ได้หลายรูป</i></span>
+            <input type="file" accept="image/*" capture="environment" multiple data-shot="more" hidden></label>
+        </div>
+        <div class="shots" id="moreBox" style="margin-top:8px"></div>
+      </div>
+
+      <label>หมายเหตุ / ที่อยู่โดยย่อ<input id="asNote" placeholder="เช่น ตลาดสดแม่กลอง ห้องที่ 12"></label>
+      <button class="go" id="asSend">ส่งเรื่องให้เจ้าของอนุมัติ</button>
+      <p class="fmini" id="asHint">เจ้าของอนุมัติที่หลังบ้านแล้วสัญญาจะเริ่มนับรอบเก็บเงินทันที</p>
+    </div>
+  </div>
+</div>
+
+<!-- ปิดรอบส่งยอด -->
+<div class="sheet" id="closeSheet" hidden>
+  <div class="inner">
+    <header class="sheetbar"><b>ปิดรอบส่งยอด</b><span><button class="ghost" id="clClose">ปิด</button></span></header>
+    <div class="csblock" style="padding-top:14px;display:grid;gap:12px">
+      <div class="cslines" style="padding:0">
+        <div><div class="k">วันที่รอบ</div><div class="v" id="clDate"></div></div>
+        <div><div class="k">ผู้เก็บ</div><div class="v" id="clWho"></div></div>
+        <div><div class="k">เก็บได้รอบนี้</div><div class="v" id="clGot"></div></div>
+        <div><div class="k">จำนวนราย</div><div class="v" id="clCount"></div></div>
+      </div>
+      <div class="form" style="gap:10px">
+        <label>ค่าน้ำมัน<input type="number" id="clFuel" min="0" step="10" value="500"></label>
+        <label>ค่าใช้จ่ายอื่น<input type="number" id="clOther" min="0" step="10" value="0"></label>
+      </div>
+      <label>รายการค่าใช้จ่ายอื่น<input id="clOtherItem" placeholder="เช่น ค่าปรับรถ ค่าโทรศัพท์"></label>
+      <label>หมายเหตุประจำรอบ<input id="clNote" placeholder="เช่น ฝนตกหนัก เก็บไม่ครบ 2 ราย"></label>
+      <div class="split" id="clSum"></div>
+      <button class="go" id="clSend">ยืนยันปิดรอบและนำส่งเงิน</button>
+      <p class="fmini">ค่าใช้จ่ายที่ใส่ที่นี่จะเข้าหน้าค่าใช้จ่ายของหลังบ้านทันที และถูกหักก่อนคิดปันผล</p>
+    </div>
+  </div>
+</div>
+
+<!-- รหัสเข้าหลังบ้าน -->
+<div class="sheet" id="pinSheet" hidden>
+  <div class="inner">
+    <header class="sheetbar"><b>เข้าหลังบ้าน</b><span><button class="ghost" id="pinClose">ปิด</button></span></header>
+    <div class="csblock" style="padding-top:14px;display:grid;gap:11px">
+      <label>รหัสผ่าน 4 หลัก<input id="pinInput" inputmode="numeric" maxlength="4" placeholder="••••"></label>
+      <button class="go" id="pinGo">เข้าหลังบ้าน</button>
+      <p class="fmini" id="pinMsg">หน้าหลังบ้านมีกำไรและปันผล คนเดินเก็บไม่ควรเข้าถึง</p>
+    </div>
+  </div>
+</div>
+
+<!-- สลิปส่งลูกค้า -->
+<div class="sheet" id="slipSheet" hidden>
+  <div class="inner">
+    <header class="sheetbar"><b>สลิปส่งลูกค้า</b><span>
+      <button class="ghost" id="slipPic">คัดลอกรูป</button>
+      <button class="ghost" id="slipImg">บันทึกรูป</button>
+      <button class="ghost" id="slipCopy">คัดลอกข้อความ</button>
+      <button class="ghost" id="slipClose">ปิด</button></span></header>
+    <div style="padding:14px"><div class="slip" id="slipBody"></div></div>
+    <p class="fmini" id="slipMsg" style="padding:0 14px 15px">แคปหน้าจอส่วนนี้ส่งให้ลูกค้าได้เลย หรือกดบันทึกเป็นรูป</p>
+  </div>
+</div>
+
+<!-- การ์ดผ่อนรายลูกค้า -->
+<div class="sheet" id="cardSheet" hidden>
+  <div class="inner">
+    <header class="sheetbar"><b id="csTitle">การ์ดผ่อน</b>
+      <span><button class="ghost" id="csSave">ปริ้นการ์ด</button>
+      <button class="ghost" id="csClose">ปิด</button></span></header>
+    <div id="csBody"></div>
+  </div>
+</div>
+
+<script>
+// ---------- ข้อมูลตั้งต้น (จาก Excel) ----------
+const NOW = new Date();
+const TODAY = new Date(NOW.getFullYear(),NOW.getMonth(),NOW.getDate());
+const CAPITAL = 200000;
+const RATES = [
+  {plan:'28 วัน',amount:5000, daily:200,days:28,interest:600},
+  {plan:'28 วัน',amount:10000,daily:400,days:28,interest:1200},
+  {plan:'28 วัน',amount:15000,daily:600,days:28,interest:1800},
+  {plan:'28 วัน',amount:20000,daily:800,days:28,interest:2400},
+  {plan:'60 วัน',amount:5000, daily:100,days:60,interest:1000},
+  {plan:'60 วัน',amount:10000,daily:200,days:60,interest:2000},
+  {plan:'60 วัน',amount:15000,daily:300,days:60,interest:3000},
+  {plan:'60 วัน',amount:20000,daily:400,days:60,interest:4000},
+];
+// missed = จำนวนรอบเสาร์ที่ยังไม่ได้เก็บ ใช้สร้างประวัติการจ่ายตัวอย่าง
+const SEED = [
+  {id:'0001',name:'ลัดดา กุลชะโล',phone:'086-855-6392',start:'2026-09-26',amount:15000,plan:'60 วัน',missed:0},
+  {id:'0002',name:'กรรณิกา ทัศเกษร',phone:'099-210-1789',start:'2026-09-26',amount:15000,plan:'60 วัน',missed:0},
+  {id:'0003',name:'นันท์ณภัทร วิจารย์จันทร์',phone:'064-138-2641',start:'2026-09-26',amount:20000,plan:'60 วัน',missed:3},
+  {id:'0004',name:'สมใจ โอนอ่อน',phone:'099-635-4801',start:'2026-09-26',amount:15000,plan:'60 วัน',missed:0},
+  {id:'0005',name:'กาญจนา เบาแรง',phone:'088-627-7160',start:'2026-09-26',amount:15000,plan:'60 วัน',missed:2},
+  {id:'0006',name:'กิรณา ทาประดิษฐ์',phone:'082-649-3785',start:'2026-09-28',amount:5000, plan:'28 วัน',missed:0},
+  {id:'0007',name:'นิตยา ยุทธวิธี',phone:'083-924-6545',start:'2026-10-04',amount:20000,plan:'60 วัน',missed:2},
+  {id:'0008',name:'แสงเดือน ทองอินทร์',phone:'081-302-8772',start:'2026-10-04',amount:10000,plan:'60 วัน',missed:0},
+  {id:'0009',name:'เสาวณี มุกขกัง',phone:'063-858-9650',start:'2026-10-10',amount:5000, plan:'60 วัน',missed:0},
+  {id:'0010',name:'ทองดี สุขสมชิต',phone:'096-161-9830',start:'2026-10-17',amount:5000, plan:'28 วัน',missed:0},
+  {id:'0011',name:'ธัญพร นครไทย',phone:'063-153-1468',start:'2026-10-17',amount:15000,plan:'28 วัน',missed:0},
+  {id:'0012',name:'นันต์ธนา โชติจิรานิษฐ์',phone:'093-294-7941',start:'2026-10-17',amount:20000,plan:'60 วัน',missed:0},
+];
+const EXP_SEED = [
+  {date:'2026-09-26',item:'ค่าน้ำมัน',amount:500,source:'เดินเก็บ'},
+  {date:'2026-10-03',item:'ค่าน้ำมัน',amount:500,source:'เดินเก็บ'},
+  {date:'2026-10-10',item:'ค่าน้ำมัน',amount:500,source:'เดินเก็บ'},
+];
+let dbExpenses = [], expenses = EXP_SEED.slice();
+function rebuildExpenses(){ expenses = EXP_SEED.concat(dbExpenses) }
+
+// ---------- helper ----------
+const d = s => { const [y,m,dd]=s.split('-').map(Number); return new Date(y,m-1,dd); };
+const iso = x => `${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,'0')}-${String(x.getDate()).padStart(2,'0')}`;
+const addDays=(x,n)=>{const r=new Date(x);r.setDate(r.getDate()+n);return r};
+const dayDiff=(a,b)=>Math.round((a-b)/86400000);
+const THM=['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+const thDate = s => { const x = typeof s==='string'?d(s):s; return `${x.getDate()} ${THM[x.getMonth()]} ${x.getFullYear()+543}`; };
+const thShort = x => `${x.getDate()}/${x.getMonth()+1}`;
+const B = n => Math.round(n).toLocaleString('th-TH');
+const esc = s => String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+function rateFor(amount,plan,days,interest){
+  if(days){                                   // แผนกำหนดเอง: ผู้ใช้ระบุวันกับดอกเบี้ยเอง
+    const dd=Math.max(7,Math.round(days)), i0=Math.max(0,Math.round(interest||0));
+    const daily=Math.max(1,Math.ceil((amount+i0)/dd));   // ปัดขึ้น กันดอกติดลบจากการปัดเศษ
+    return {plan:dd+' วัน (กำหนดเอง)',amount,days:dd,daily,interest:daily*dd-amount};
+  }
+  const rows = RATES.filter(r=>r.plan===plan);
+  const exact = rows.find(r=>r.amount===amount);
+  if(exact) return {...exact};
+  const base = rows.reduce((a,b)=>Math.abs(b.amount-amount)<Math.abs(a.amount-amount)?b:a);
+  const k = amount/base.amount;
+  return {plan,amount,days:base.days,daily:Math.round(base.daily*k),interest:Math.round(base.interest*k)};
+}
+
+// ---------- หักงวดแรกตอนปล่อยเงิน ----------
+const UPFRONT_DEFAULT='round';                 // 'none' | 'day' (1 งวด) | 'round' (1 รอบ = 7 งวด)
+const UPFRONT_LABEL={none:'ไม่หัก',day:'หัก 1 งวด',round:'หัก 1 รอบ (7 งวด)'};
+function upfrontOf(mode,daily){
+  return mode==='round' ? daily*7 : mode==='day' ? daily : 0;
+}
+function upfrontOptions(sel){
+  return Object.keys(UPFRONT_LABEL)
+    .map(k=>`<option value="${k}" ${k===(sel||UPFRONT_DEFAULT)?'selected':''}>${UPFRONT_LABEL[k]}</option>`).join('');
+}
+
+// ---------- รอบเก็บเงิน: ทุกวันเสาร์ ----------
+const SAT = 6;
+function satFrom(x){ const r=new Date(x); r.setDate(r.getDate()+((SAT-r.getDay())+7)%7); return r }
+function thisRoundDate(){ return iso(satFrom(TODAY)) }   // เสาร์วันนี้ หรือเสาร์ถัดไป (ใช้ตอนเปิดสัญญา)
+function lastRoundDate(){                                 // รอบเก็บล่าสุดที่ถึงกำหนดแล้ว
+  const s=satFrom(TODAY);
+  return iso(iso(s)===iso(TODAY) ? s : addDays(s,-7));
+}
+function rounds(c){
+  const out=[], n=Math.ceil(c.days/7);
+  let cur=satFrom(addDays(d(c.start),1));                 // รอบแรก = เสาร์ถัดจากวันเริ่มสัญญา
+  for(let k=1;k<=n;k++){
+    const from=(k-1)*7+1, to=Math.min(c.days,k*7);
+    out.push({k,date:iso(cur),from,to,inst:to-from+1,amount:(to-from+1)*c.daily});
+    cur=addDays(cur,7);
+  }
+  return out;
+}
+
+// ---------- สร้างสัญญา + ประวัติการจ่าย ----------
+let contracts = [], payments = [], SEEDED = [];
+(DEMO_SEED ? SEED : []).forEach(s=>{
+  const r = rateFor(s.amount,s.plan);
+  const start = d(s.start);
+  const c = {id:s.id,name:s.name,phone:s.phone,no:'2569'+s.id,plan:s.plan,amount:s.amount,
+    daily:r.daily,days:r.days,interest:r.interest,total:s.amount+r.interest,
+    start:s.start,end:iso(addDays(start,r.days-1)),
+    upfront_mode:UPFRONT_DEFAULT, upfront:upfrontOf(UPFRONT_DEFAULT,r.daily)};
+  contracts.push(c);
+  let acc=0;
+  if(c.upfront && d(c.start)<=TODAY){ acc=c.upfront; SEEDED.push({no:c.no,date:c.start,amount:c.upfront}) }
+  const past = rounds(c).filter(r=>d(r.date)<=TODAY);
+  past.slice(0, Math.max(0,past.length-s.missed)).forEach(r=>{
+    const left=c.total-acc; if(left<=0) return;             // เก็บครบแล้วไม่เก็บเกิน
+    const amt=Math.min(r.amount,left); acc+=amt;
+    SEEDED.push({no:c.no,date:r.date,amount:amt});
+  });
+});
+payments = SEEDED.slice();
+const BASE = contracts.slice();
+let dbContracts = [], apps = [];
+function rebuildContracts(){ contracts = BASE.concat(dbContracts) }
+function nextContractNo(){
+  let max=0; contracts.forEach(c=>{ const n=Number(String(c.no).slice(4)); if(n>max) max=n });
+  return '2569'+String(max+1).padStart(4,'0');
+}
+
+// ---------- ฐานข้อมูลร่วมระหว่างหน้าบ้าน-หลังบ้าน ----------
+let DB=null, inbox=[], visits=[], handovers=[], dbOn=false;
+function syncLabel(txt,ok){const e=document.getElementById('syncState');
+  e.textContent=txt; e.style.color=ok?'var(--ok)':'var(--muted)'}
+const roundOf = r => r.round_date || r.paid_at;   // รอบที่ปิดยอด (ของเก่าไม่มีก็ใช้วันรับเงิน)
+function rebuildPayments(){
+  payments = SEEDED.concat(inbox.filter(r=>r.status==='approved')
+    .map(r=>({no:r.contract_no,date:roundOf(r),amount:Number(r.amount)||0})));
+}
+async function initDB(){
+  if(!SB){ syncLabel('ยังไม่ได้ตั้งค่า Supabase · ข้อมูลอยู่ในเครื่องนี้เท่านั้น',false); return; }
+  DB = SBDB; dbOn = true;
+  syncLabel('เชื่อมต่อ Supabase แล้ว · บันทึกข้ามเครื่องได้',true);
+  DB.collection('collections').onSnapshot(s=>{
+    inbox = s.docs.map(x=>({id:x.id,...x.data()}));
+    rebuildPayments(); renderAll();
+  }, e=>syncLabel('ซิงก์ไม่ได้ ('+e.code+')',false));
+  DB.collection('contracts').onSnapshot(s=>{
+    dbContracts = s.docs.map(x=>x.data()).filter(r=>r&&r.no);
+    rebuildContracts(); rebuildPayments(); renderAll(); }, ()=>{});
+  DB.collection('expenses').onSnapshot(s=>{
+    dbExpenses = s.docs.map(x=>({id:x.id,...x.data()}));
+    rebuildExpenses(); renderAll(); }, ()=>{});
+  DB.collection('applications').onSnapshot(s=>{
+    apps = s.docs.map(x=>({id:x.id,...x.data()})); renderInbox(); }, ()=>{});
+  DB.collection('visits').onSnapshot(s=>{
+    visits = s.docs.map(x=>({id:x.id,...x.data()})); renderInbox(); }, ()=>{});
+  DB.collection('handovers').onSnapshot(s=>{
+    handovers = s.docs.map(x=>({id:x.id,...x.data()})); renderInbox(); }, ()=>{});
+}
+async function createContract(o){
+  const r=rateFor(Number(o.amount),o.plan,o.days,o.interest), no=nextContractNo();
+  const mode=o.upfront_mode||UPFRONT_DEFAULT, up=upfrontOf(mode,r.daily);
+  const c={id:no.slice(4),name:o.name,phone:o.phone||'—',no,plan:r.plan,amount:Number(o.amount),
+    daily:r.daily,days:r.days,interest:r.interest,total:Number(o.amount)+r.interest,
+    start:o.start,end:iso(addDays(d(o.start),r.days-1)),note:o.note||'',photos:o.photos||{},
+    upfront_mode:mode, upfront:up};
+  if(dbOn){ try{ await DB.doc('contracts/'+no).set(c) }catch(e){ return null } }
+  else { dbContracts.push(c); rebuildContracts(); rebuildPayments(); renderAll() }
+  if(up>0){
+    await dbAdd('collections',{contract_no:no,customer:c.name,amount:up,
+      installments:Number((up/r.daily).toFixed(2)),paid_at:o.start,round_date:o.start,
+      collector:'หักตอนปล่อยเงิน',note:'หักงวดแรกวันเปิดสัญญา',status:'approved',
+      created_at:new Date().toISOString()}, inbox);
+  }
+  return c;
+}
+async function dbAdd(coll,rec,localStore){
+  if(dbOn){ try{ await DB.collection(coll).add(rec); return true }catch(e){ return e.code||'error' } }
+  localStore.push({id:'local-'+Math.random().toString(36).slice(2),...rec});
+  rebuildPayments(); rebuildExpenses(); renderAll(); return true;
+}
+
+// ---------- คำนวณสถานะ ----------
+function state(c){
+  const paid = payments.filter(p=>p.no===c.no).reduce((a,p)=>a+p.amount,0);
+  const ratioP = c.amount/c.total;
+  const principalPaid = paid*ratioP, interestPaid = paid-principalPaid;
+  const instPaid = paid/c.daily;
+  const rs = rounds(c);
+  const due = rs.filter(r=>d(r.date)<=TODAY).reduce((a,r)=>a+r.inst,0);
+  const behind = Math.max(0, Math.round(due-instPaid));
+  const behindRounds = Math.ceil(behind/7);
+  let acc=0, next=null;
+  for(const r of rs){ acc+=r.inst; if(!next && acc>instPaid+0.01) next=r }
+  let st;
+  if(paid>=c.total-0.5) st='closed';
+  else if(d(c.start)>TODAY) st='pending';
+  else if(behind===0) st='ok';
+  else if(behindRounds<=1) st='watch';
+  else st='risk';
+  const upcoming = rs.find(r=>d(r.date)>TODAY);
+  const isSat = TODAY.getDay()===SAT;
+  const collectNext = Math.min(c.total-paid,
+    behind*c.daily + (isSat||!upcoming ? 0 : upcoming.amount));
+  return {paid,principalPaid,interestPaid,instPaid,behind,behindRounds,due,st,rs,next,upcoming,collectNext,
+    remain:c.total-paid, outstanding:c.amount-principalPaid, pct:Math.min(100,paid/c.total*100)};
+}
+// ---------- ประวัติลูกค้า (ผูกด้วยเบอร์โทร ถ้าไม่มีใช้ชื่อ) ----------
+function custKey(x){
+  const p=String(x.phone||'').replace(/\D/g,'');
+  return p ? 'p:'+p : 'n:'+String(x.name||'').trim();
+}
+function lateRounds(c){                 // เคยปล่อยให้ค้างกี่รอบตลอดอายุสัญญา
+  let due=0, late=0;
+  for(const r of rounds(c)){
+    if(d(r.date)>TODAY) break;
+    due+=r.inst;
+    const paid=payments.filter(p=>p.no===c.no&&p.date<=r.date)
+      .reduce((a,p)=>a+p.amount,0)/c.daily;
+    if(paid+0.01<due) late++;
+  }
+  return late;
+}
+function custStats(key,excludeNo){
+  const list=contracts.filter(x=>custKey(x)===key && x.no!==excludeNo)
+    .sort((a,b)=>String(b.start).localeCompare(String(a.start)));
+  let closed=0,maxLate=0,interest=0,borrowed=0,openRisk=0,open=0;
+  const rows=list.map(x=>{
+    const s=state(x), l=lateRounds(x);
+    if(s.st==='closed') closed++; else open++;
+    if(l>maxLate) maxLate=l;
+    if(s.st!=='closed' && s.behindRounds>2) openRisk++;
+    interest+=s.interestPaid; borrowed+=x.amount;
+    return {c:x,s,late:l};
+  });
+  let grade,cls;
+  if(!list.length){ grade='ลูกค้าใหม่ · ยังไม่มีประวัติ'; cls='p-idle' }
+  else if(openRisk){ grade='ไม่ควรปล่อยเพิ่ม · สัญญาเดิมยังค้างอยู่'; cls='p-bad' }
+  else if(maxLate===0){ grade='เครดิตดีมาก · จ่ายตรงทุกรอบ'; cls='p-ok' }
+  else if(maxLate<=1){ grade='เครดิตดี · เคยช้า 1 รอบ'; cls='p-ok' }
+  else if(maxLate<=3){ grade='ต้องระวัง · เคยช้า '+maxLate+' รอบ'; cls='p-warn' }
+  else { grade='เสี่ยงสูง · เคยช้า '+maxLate+' รอบ'; cls='p-bad' }
+  return {rows,list,closed,open,maxLate,interest,borrowed,grade,cls};
+}
+function custHistoryHTML(c){
+  const h=custStats(custKey(c),c.no);
+  const sum = h.list.length
+    ? `เคยกู้ ${h.list.length} สัญญา · ปิดครบ ${h.closed} · ยอดกู้สะสม ${B(h.borrowed)} · ดอกที่จ่ายมาแล้ว ${B(h.interest)}`
+    : 'สัญญานี้เป็นสัญญาแรกของลูกค้ารายนี้';
+  return `<div style="grid-column:1/-1">
+    <div class="k">ประวัติลูกค้ารายนี้</div>
+    <div class="app" style="margin:6px 0 0">
+      <div class="hd"><span class="pill ${h.cls}">${h.grade}</span><span class="hint">${sum}</span></div>
+      ${h.rows.length?`<div class="scroll"><table>
+        <thead><tr><th>สัญญาเดิม</th><th>ช่วงเวลา</th><th class="r">ยอดกู้</th>
+          <th class="r">เก็บได้</th><th class="r">รอบที่ช้า</th><th>สถานะ</th></tr></thead><tbody>`+
+        h.rows.map(r=>`<tr class="clickable" data-go="${r.c.no}">
+          <td class="mono">${r.c.no}</td><td>${thDate(r.c.start)} – ${thDate(r.c.end)}</td>
+          <td class="r">${B(r.c.amount)}</td><td class="r">${B(r.s.paid)}</td>
+          <td class="r">${r.late||'—'}</td><td>${pill(r.s.st)}</td></tr>`).join('')+
+        `</tbody></table></div>`:''}
+    </div></div>`;
+}
+
+const ST = {ok:['ปกติ','p-ok'],watch:['เฝ้าระวัง','p-warn'],risk:['เสี่ยง','p-bad'],
+            closed:['ปิดสัญญา','p-idle'],pending:['รอเริ่ม','p-idle']};
+const pill = st => `<span class="pill ${ST[st][1]}">${ST[st][0]}</span>`;
+
+function totals(){
+  let disbursed=0,collected=0,principalPaid=0,interestPaid=0,outstanding=0,waiting=0;
+  const counts={ok:0,watch:0,risk:0,closed:0,pending:0};
+  contracts.forEach(c=>{ const s=state(c); counts[s.st]++;
+    if(s.st==='pending'){waiting+=c.amount;return}
+    disbursed+=c.amount; collected+=s.paid; principalPaid+=s.principalPaid;
+    interestPaid+=s.interestPaid; outstanding+=s.outstanding; });
+  const exp = expenses.reduce((a,e)=>a+e.amount,0);
+  const cash = CAPITAL-disbursed+collected-exp;
+  return {disbursed,collected,principalPaid,interestPaid,outstanding,waiting,exp,counts,
+    cash, net:interestPaid-exp, assets:cash+outstanding};
+}
+
+// ---------- หน้าภาพรวม ----------
+function roundProgress(){          // ความคืบหน้าของรอบเก็บล่าสุด: เป้า / เก็บได้ / เหลือ
+  const rd=lastRoundDate();
+  let got=0,target=0,done=0,active=0;
+  contracts.forEach(c=>{
+    const rs=rounds(c), row=rs.find(r=>r.date===rd);
+    if(!row) return;                                   // ยังไม่เริ่ม หรือจบไปก่อนรอบนี้
+    const dueBefore=rs.filter(r=>r.date<rd).reduce((a,r)=>a+r.inst,0);
+    const paidBefore=payments.filter(p=>p.no===c.no&&p.date<rd).reduce((a,p)=>a+p.amount,0);
+    const arrears=Math.max(0,Math.round(dueBefore*c.daily-paidBefore));
+    const tgt=Math.max(0,Math.min(row.amount+arrears, c.total-paidBefore));
+    const rec=recOf(c.no)[rd], g=rec?rec.amount:0;
+    if(tgt<=0 && g<=0) return;
+    active++; target+=tgt; got+=g;
+    if(g>=tgt-0.5) done++;
+  });
+  return {rd,got,target,left:Math.max(0,target-got),done,active};
+}
+function renderDash(){
+  const t=totals(), p=roundProgress();
+  document.getElementById('todayLabel').textContent='วันนี้ '+thDate(TODAY);
+  const pct=p.target?Math.min(100,p.got/p.target*100):0;
+  document.getElementById('dashRound').innerHTML=`
+    <div class="hero">
+      <div class="lbl"><span>เก็บได้ในรอบเสาร์ที่ ${thDate(p.rd)}</span>
+        <span>${p.done} / ${p.active} ราย</span></div>
+      <div class="big">${B(p.got)}<small>/ ${B(p.target)}</small></div>
+      <div class="prog"><i style="width:${pct}%"></i></div>
+      <div class="foot"><span>เหลือเก็บอีก <b>${B(p.left)}</b></span>
+        <span>คิดเป็น <b>${pct.toFixed(0)}%</b> ของเป้ารอบนี้</span>
+        <span>ค่าใช้จ่ายรอบนี้ <b>${B(expenses.filter(e=>e.date>=p.rd).reduce((a,e)=>a+Number(e.amount||0),0))}</b></span></div>
+    </div>`;
+
+  const growth=CAPITAL?((t.assets-CAPITAL)/CAPITAL*100):0;
+  document.getElementById('dashTiles').innerHTML=`
+    <div class="tile"><div class="k">เงินสดพร้อมปล่อย</div><div class="v">${B(t.cash)}</div>
+      <div class="s">${t.waiting?'รอปล่อยตามสัญญาใหม่ '+B(t.waiting):'ไม่มีสัญญารอปล่อย'}</div></div>
+    <div class="tile"><div class="k">เงินต้นอยู่กับลูกค้า</div><div class="v">${B(t.outstanding)}</div>
+      <div class="s">ลูกค้าที่ยังผ่อน ${t.counts.ok+t.counts.watch+t.counts.risk} ราย</div></div>
+    <div class="tile"><div class="k">กำไรสุทธิสะสม</div><div class="v">${B(t.net)}</div>
+      <div class="s">ดอกที่เก็บได้ ${B(t.interestPaid)} − ค่าใช้จ่าย ${B(t.exp)}</div></div>`;
+
+  // สิ่งที่ต้องทำ
+  const pendPay=inbox.filter(r=>r.status==='pending').length;
+  const pendApp=apps.filter(a=>a.status==='pending').length;
+  const risky=contracts.filter(c=>state(c).st==='risk').length;
+  const jobs=[];
+  if(pendPay) jobs.push(['inbox',pendPay,'ยอดรออนุมัติ']);
+  if(pendApp) jobs.push(['loan',pendApp,'คำขอลูกค้าใหม่']);
+  if(risky) jobs.push(['cust',risky,'ลูกค้าเสี่ยง ค้างเกิน 1 รอบ']);
+  document.getElementById('dashTodo').innerHTML = jobs.length
+    ? `<div class="todo">${jobs.map(([v,n,l])=>
+        `<button data-jump="${v}"><b>${n}</b> ${l} →</button>`).join('')}</div>`
+    : `<div class="todo"><span class="none">ไม่มีรายการค้างให้ตรวจ ทุกอย่างอัปเดตแล้ว</span></div>`;
+  document.querySelectorAll('#dashTodo [data-jump]').forEach(b=>b.onclick=()=>{
+    if(b.dataset.jump==='cust'){ custFilter='late';
+      document.querySelectorAll('#custFilters button').forEach(x=>
+        x.setAttribute('aria-pressed',String(x.dataset.f==='late'))); renderCust(); }
+    const nav=document.querySelector(`.nav button[data-view="${b.dataset.jump}"]`); if(nav) nav.click();
+  });
+
+  // เงินทุนอยู่ที่ไหน
+  const mix=[['เงินสดในมือ',t.cash,'var(--accent)'],
+             ['เงินต้นอยู่กับลูกค้า',t.outstanding,'var(--warn)']];
+  const mixTotal=mix.reduce((a,m)=>a+m[1],0)||1;
+  document.getElementById('dashMix').innerHTML=`
+    <div class="segbar">${mix.map(m=>
+      `<div style="width:${m[1]/mixTotal*100}%;background:${m[2]}" title="${m[0]} ${B(m[1])}"></div>`).join('')}</div>
+    <div class="seglegend">${mix.map(m=>
+      `<div><span><i style="background:${m[2]}"></i>${m[0]}</span><b>${B(m[1])}</b>
+        <span>${(m[1]/mixTotal*100).toFixed(0)}% ของสินทรัพย์</span></div>`).join('')}
+      <div><span>สินทรัพย์ทั้งหมด</span><b>${B(t.assets)}</b>
+        <span>${growth>=0?'โตจากทุน':'ต่ำกว่าทุน'} ${Math.abs(growth).toFixed(1)}%</span></div></div>
+    <div class="capline"><span>เงินทุนตั้งต้น <b>${B(CAPITAL)}</b></span>
+      <span>ปล่อยกู้สะสม <b>${B(t.disbursed)}</b></span>
+      <span>เก็บคืนแล้ว <b>${B(t.collected)}</b></span>
+      <span>ดอกค้างรับ <b>${B(contracts.reduce((a,c)=>{const s=state(c);
+        return a+(s.st==='pending'?0:c.interest-s.interestPaid)},0))}</b></span></div>`;
+
+  // สุขภาพพอร์ต
+  const grp=[['ok','ปกติ','var(--ok)'],['watch','เฝ้าระวัง','var(--warn)'],['risk','เสี่ยง','var(--bad)']];
+  const data=grp.map(([k,label,col])=>{
+    const cs=contracts.filter(c=>state(c).st===k);
+    return {label,col,n:cs.length,amt:cs.reduce((a,c)=>a+state(c).outstanding,0)};
+  });
+  const hTotal=data.reduce((a,x)=>a+x.amt,0)||1;
+  document.getElementById('dashHealth').innerHTML=`
+    <div class="segbar">${data.map(x=>
+      `<div style="width:${x.amt/hTotal*100}%;background:${x.col}" title="${x.label} ${B(x.amt)}"></div>`).join('')}</div>
+    <div class="seglegend">${data.map(x=>
+      `<div><span><i style="background:${x.col}"></i>${x.label}</span><b>${x.n} ราย</b>
+        <span>เงินต้น ${B(x.amt)}</span></div>`).join('')}
+      <div><span>ปิดสัญญาแล้ว</span><b>${t.counts.closed} ราย</b>
+        <span>รอเริ่มสัญญา ${t.counts.pending} ราย</span></div></div>
+    <div class="capline"><span>เงินที่เสี่ยงเก็บไม่ได้ <b style="color:var(--bad)">${B(data[2].amt)}</b>
+      (${(data[2].amt/hTotal*100).toFixed(0)}% ของเงินต้นที่ปล่อยอยู่)</span></div>`;
+
+  renderChart(); renderDue();
+}
+
+function renderChart(){
+  const days=[],W=720,H=190,pad={l:52,r:8,t:12,b:26};
+  let last=satFrom(TODAY); if(iso(last)>iso(TODAY)) last=addDays(last,-7);
+  const bucket={};
+  payments.forEach(q=>{ const k=iso(satFrom(d(q.date)));
+    const c=contracts.find(c=>c.no===q.no); const rp=c.amount/c.total;
+    bucket[k]=bucket[k]||{p:0,g:0}; bucket[k].p+=q.amount*rp; bucket[k].g+=q.amount*(1-rp); });
+  for(let i=7;i>=0;i--){
+    const x=addDays(last,-7*i), b=bucket[iso(x)]||{p:0,g:0};
+    days.push({x,p:b.p,g:b.g,tot:b.p+b.g});
+  }
+  const max = Math.max(2000, ...days.map(v=>v.tot));
+  const step = Math.ceil(max/3/1000)*1000, top = step*3;
+  const bw = (W-pad.l-pad.r)/days.length;
+  const y = v => pad.t+(H-pad.t-pad.b)*(1-v/top);
+  let g='';
+  for(let i=0;i<=3;i++){ const v=step*i;
+    g+=`<line x1="${pad.l}" y1="${y(v)}" x2="${W-pad.r}" y2="${y(v)}" stroke="var(--line)" stroke-width="1"/>
+        <text x="${pad.l-7}" y="${y(v)+4}" text-anchor="end" font-size="11" fill="var(--muted)" font-family="IBM Plex Mono,monospace">${v?B(v):'0'}</text>`; }
+  days.forEach((v,i)=>{
+    const x0=pad.l+i*bw+bw*0.18, w=bw*0.64;
+    const hp=(H-pad.t-pad.b)*v.p/top, hg=(H-pad.t-pad.b)*v.g/top;
+    if(v.tot>0){
+      g+=`<rect x="${x0}" y="${y(v.p)}" width="${w}" height="${hp}" fill="var(--accent)" rx="2"/>`;
+      g+=`<rect x="${x0}" y="${y(v.tot)}" width="${w}" height="${hg}" fill="var(--warn)" rx="2"/>`;
+    }
+    g+=`<text x="${pad.l+i*bw+bw/2}" y="${H-8}" text-anchor="middle" font-size="10.5" fill="var(--muted)" font-family="IBM Plex Mono,monospace">${thShort(v.x)}</text>`;
+  });
+  document.getElementById('chartWrap').innerHTML =
+    `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="ยอดเก็บได้ 8 รอบล่าสุด">${g}</svg>`;
+}
+
+function renderDue(){
+  const rows = contracts.map(c=>({c,s:state(c)}))
+    .filter(r=>['ok','watch','risk'].includes(r.s.st))
+    .sort((a,b)=>b.s.behind-a.s.behind||b.c.daily-a.c.daily).slice(0,8);
+  document.getElementById('dueTable').innerHTML =
+    `<thead><tr><th>ลูกค้า</th><th>สัญญา</th><th class="r">เก็บ/รอบ</th><th class="r">ค้าง (รอบ)</th>
+      <th class="r">ต้องเก็บรอบนี้</th><th>รอบที่ยังไม่ได้เก็บ</th><th>สถานะ</th></tr></thead><tbody>`+
+    rows.map(({c,s})=>`<tr><td>${esc(c.name)}</td><td class="mono">${c.no}</td>
+      <td class="r">${B(c.daily*7)}</td><td class="r">${s.behindRounds||'—'}</td>
+      <td class="r">${B(s.collectNext)}</td>
+      <td>${s.next?thDate(s.next.date):'—'}</td><td>${pill(s.st)}</td></tr>`).join('')+'</tbody>';
+}
+
+// ---------- หน้าลูกค้า ----------
+let custFilter='all', selected=null;
+function renderCust(){
+  const list = contracts.map(c=>({c,s:state(c)})).filter(({s})=>
+    custFilter==='all' ? true :
+    custFilter==='active' ? ['ok','watch','risk'].includes(s.st) :
+    custFilter==='late' ? ['watch','risk'].includes(s.st) :
+    custFilter==='closed' ? s.st==='closed' : s.st==='pending');
+  document.getElementById('custTable').innerHTML =
+    `<thead><tr><th>รหัส</th><th>ลูกค้า</th><th>เลขที่สัญญา</th><th>แผน</th><th class="r">ยอดกู้</th>
+      <th class="r">ชำระมาแล้ว</th><th class="r">คงเหลือ</th><th>ความคืบหน้า</th><th class="r">ค้าง (รอบ)</th><th>สถานะ</th></tr></thead><tbody>`+
+    (list.length?list.map(({c,s})=>`<tr class="clickable ${selected===c.no?'sel':''}" data-no="${c.no}">
+      <td class="mono">${c.id}</td><td>${esc(c.name)}</td><td class="mono">${c.no}</td><td>${c.plan}</td>
+      <td class="r">${B(c.amount)}</td>
+      <td class="r" style="color:var(--ok);font-weight:600">${B(s.paid)}</td>
+      <td class="r" style="font-weight:600">${B(s.remain)}</td>
+      <td><span class="bar"><i style="width:${s.pct}%"></i></span> <span class="mono" style="font-size:12px">${s.pct.toFixed(0)}%</span></td>
+      <td class="r">${s.behindRounds||'—'}</td><td>${pill(s.st)}</td></tr>`).join('')
+      :`<tr><td colspan="10" style="color:var(--muted)">ไม่มีสัญญาในกลุ่มนี้</td></tr>`)+'</tbody>';
+  document.querySelectorAll('#custTable tr.clickable').forEach(tr=>
+    tr.onclick=()=>{selected=tr.dataset.no;renderCust();renderDetail()});
+  renderDetail();
+}
+function renderDetail(){
+  const card=document.getElementById('custDetailCard');
+  if(!selected){card.hidden=true;return}
+  const c=contracts.find(x=>x.no===selected); if(!c){card.hidden=true;return}
+  const s=state(c); card.hidden=false;
+  document.getElementById('cdName').textContent = c.name+' · '+c.no;
+  document.getElementById('cdDetail').innerHTML = `
+    <div><div class="k">เบอร์โทร</div><div class="v mono" style="font-size:15px">${c.phone}</div></div>
+    <div><div class="k">ยอดกู้ / ต้องจ่ายรวม</div><div class="v">${B(c.amount)} / ${B(c.total)}</div></div>
+    <div><div class="k">หักงวดแรก / รับเงินจริง</div><div class="v">${B(c.upfront||0)} / ${B(c.amount-(c.upfront||0))}</div></div>
+    <div><div class="k">เก็บทุกวันเสาร์</div><div class="v">${B(c.daily*7)} × ${Math.ceil(c.days/7)} รอบ</div></div>
+    <div><div class="k">เก็บได้แล้ว</div><div class="v">${B(s.paid)}</div></div>
+    <div><div class="k">คงเหลือต้องเก็บ</div><div class="v">${B(s.remain)}</div></div>
+    <div><div class="k">กำไรที่รับรู้แล้ว</div><div class="v">${B(s.interestPaid)}</div></div>
+    <div><div class="k">วันเริ่ม – วันหมดสัญญา</div><div class="v" style="font-size:14px">${thDate(c.start)} – ${thDate(c.end)}</div></div>
+    <div><div class="k">สถานะ</div><div class="v">${pill(s.st)}${s.behindRounds?` <span class="mono" style="font-size:13px">ค้าง ${s.behindRounds} รอบ</span>`:''}</div></div>
+    <div><div class="k">ต้องเก็บรอบนี้</div><div class="v">${s.st==='closed'?'—':B(s.collectNext)}</div></div>
+    ${photoTotal(c.photos)?`<div style="grid-column:1/-1">
+      <div class="k">รูปประกอบสัญญา (${photoTotal(c.photos)} รูป)</div>
+      <div class="app" style="margin:6px 0 0">${thumbsHTML(c.photos)}</div></div>`:''}
+    ${custHistoryHTML(c)}`;
+  document.querySelectorAll('#cdDetail [data-go]').forEach(tr=>tr.onclick=()=>{
+    selected=tr.dataset.go; custFilter='all';
+    document.querySelectorAll('#custFilters button').forEach(x=>x.setAttribute('aria-pressed',String(x.dataset.f==='all')));
+    renderCust();
+  });
+  document.getElementById('cdRounds').innerHTML = roundsTableHTML(c);
+  const ps = payments.filter(p=>p.no===c.no).sort((a,b)=>b.date.localeCompare(a.date));
+  const rp = c.amount/c.total;
+  document.getElementById('cdHistory').innerHTML =
+    `<thead><tr><th>วันที่จ่าย</th><th class="r">ยอดที่เก็บได้</th><th class="r">ตัดเงินต้น</th><th class="r">กำไร (ดอก)</th><th class="r">คิดเป็นงวด</th></tr></thead><tbody>`+
+    (ps.length?ps.map(p=>`<tr><td>${thDate(p.date)}</td><td class="r">${B(p.amount)}</td>
+      <td class="r">${B(p.amount*rp)}</td><td class="r">${B(p.amount*(1-rp))}</td>
+      <td class="r">${(p.amount/c.daily).toFixed(0)}</td></tr>`).join('')
+     :`<tr><td colspan="5" style="color:var(--muted)">ยังไม่มีรายการเก็บเงิน</td></tr>`)+'</tbody>';
+}
+document.getElementById('cdClose').onclick=()=>{selected=null;renderCust()};
+document.getElementById('cdCard').onclick=()=>{ if(selected) openCard(selected) };
+document.getElementById('cdSlip').onclick=()=>{ if(selected) openSlip(selected) };
+document.querySelectorAll('#custFilters button').forEach(b=>b.onclick=()=>{
+  custFilter=b.dataset.f;
+  document.querySelectorAll('#custFilters button').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));
+  renderCust();
+});
+
+// ---------- หน้าเก็บเงิน ----------
+function fillCollectSel(){
+  const sel=document.getElementById('cSel'), keep=sel.value;
+  sel.innerHTML = contracts.map(c=>{const s=state(c);
+    return `<option value="${c.no}" ${s.st==='closed'?'disabled':''}>${c.no} · ${c.name}${s.st==='closed'?' (ปิดแล้ว)':''}</option>`}).join('');
+  if(keep) sel.value=keep;
+}
+function collectPreview(){
+  const c=contracts.find(x=>x.no===document.getElementById('cSel').value);
+  const box=document.getElementById('cSplit'), note=document.getElementById('cNote');
+  if(!c){box.innerHTML='';return}
+  const s=state(c), amt=Number(document.getElementById('cAmt').value)||0;
+  const use=Math.min(amt,s.remain), rp=c.amount/c.total;
+  box.innerHTML=`<div>เก็บต่อรอบ <b>${B(c.daily*7)}</b></div>
+    <div>คิดเป็น <b>${(use/c.daily/7).toFixed(2)}</b> รอบ (${(use/c.daily).toFixed(1)} งวด)</div>
+    <div>ตัดเงินต้น <b>${B(use*rp)}</b></div>
+    <div>กำไร (ดอก) <b>${B(use*(1-rp))}</b></div>
+    <div>คงเหลือหลังจ่าย <b>${B(s.remain-use)}</b></div>`;
+  note.textContent = amt>s.remain
+    ? `ยอดเกินที่ค้างอยู่ ระบบจะบันทึกแค่ ${B(s.remain)} บาท แล้วปิดสัญญา`
+    : s.behindRounds ? `สัญญานี้ค้าง ${s.behindRounds} รอบ (${B(s.behind*c.daily)} บาท) · ต้องเก็บรอบนี้ ${B(s.collectNext)} บาท`
+    : `จ่ายตรงทุกรอบ · ต้องเก็บรอบนี้ ${B(s.collectNext)} บาท`;
+}
+document.getElementById('cSel').onchange=collectPreview;
+document.getElementById('cAmt').oninput=collectPreview;
+document.getElementById('cSave').onclick=async()=>{
+  const c=contracts.find(x=>x.no===document.getElementById('cSel').value);
+  const amt=Number(document.getElementById('cAmt').value)||0;
+  const date=document.getElementById('cDate').value||iso(TODAY);
+  const t=document.getElementById('cToast');
+  if(!c||amt<=0){t.hidden=false;t.style.color='var(--bad)';t.textContent='ใส่ยอดเงินที่เก็บได้ก่อน';return}
+  if(date>iso(TODAY)){t.hidden=false;t.style.color='var(--bad)';t.textContent='เลือกวันที่ในอนาคตไม่ได้';return}
+  const use=Math.min(amt,state(c).remain);
+  const round=iso(satFrom(d(date)));
+  const res=await dbAdd('collections',{contract_no:c.no,customer:c.name,amount:use,
+    installments:Number((use/c.daily).toFixed(2)),
+    paid_at:date, round_date:round, collector:'เจ้าของ',
+    note:'บันทึกจากหลังบ้าน',status:'approved',backdated:round<lastRoundDate(),
+    created_at:new Date().toISOString()}, inbox);
+  if(res!==true){t.hidden=false;t.style.color='var(--bad)';t.textContent='บันทึกไม่สำเร็จ ลองอีกครั้ง';return}
+  document.getElementById('cAmt').value='';
+  t.hidden=false;t.style.color='var(--ok)';
+  t.textContent=`บันทึกแล้ว · ${c.name} ${B(use)} บาท วันที่ ${thDate(date)}`
+    +(date<lastRoundDate()?' (ย้อนหลัง)':'');
+};
+function renderLedger(){
+  const rows=payments.map(p=>{const c=contracts.find(x=>x.no===p.no);return {...p,c}})
+    .sort((a,b)=>b.date.localeCompare(a.date)).slice(0,30);
+  document.getElementById('ledgerTable').innerHTML =
+    `<thead><tr><th>รอบที่ปิดยอด</th><th>ชื่อลูกค้า</th><th>เลขที่สัญญา</th><th class="r">ยอดที่เก็บได้</th>
+      <th class="r">ตัดเงินต้น</th><th class="r">กำไร (ดอก)</th><th class="r">จ่ายแล้ว/งวด</th><th class="r">ค้าง (รอบ)</th></tr></thead><tbody>`+
+    rows.map(r=>{const s=state(r.c),rp=r.c.amount/r.c.total;
+      return `<tr><td>${thDate(r.date)}</td><td>${esc(r.c.name)}</td><td class="mono">${r.c.no}</td>
+        <td class="r">${B(r.amount)}</td><td class="r">${B(r.amount*rp)}</td><td class="r">${B(r.amount*(1-rp))}</td>
+        <td class="r">${Math.floor(s.instPaid)}/${r.c.days}</td><td class="r">${s.behindRounds||'—'}</td></tr>`}).join('')+'</tbody>';
+}
+
+// ---------- หน้าปล่อยกู้ ----------
+function fillLoanAmounts(){
+  const plan=document.getElementById('nPlan').value, sel=document.getElementById('nAmt'), keep=sel.value;
+  sel.innerHTML=RATES.filter(r=>r.plan===(plan==='custom'?'60 วัน':plan))
+      .map(r=>`<option value="${r.amount}">${B(r.amount)} บาท</option>`).join('')
+    +'<option value="custom">กำหนดเอง</option>';
+  if(keep&&[...sel.options].some(o=>o.value===keep)) sel.value=keep;
+  loanPreview();
+}
+function nVals(){
+  const custom=document.getElementById('nPlan').value==='custom';
+  const sel=document.getElementById('nAmt').value;
+  return {custom,
+    amt: sel==='custom'?Number(document.getElementById('nAmtCustom').value)||0:Number(sel)||0,
+    plan: custom?'กำหนดเอง':document.getElementById('nPlan').value,
+    days: custom?Number(document.getElementById('nDays').value)||0:0,
+    interest: custom?Number(document.getElementById('nInt').value)||0:0};
+}
+function loanPreview(){
+  const v=nVals(), amt=v.amt;
+  document.getElementById('nAmtC').hidden = document.getElementById('nAmt').value!=='custom';
+  document.getElementById('nDaysC').hidden = !v.custom;
+  document.getElementById('nIntC').hidden = !v.custom;
+  const r=rateFor(amt,v.plan,v.days,v.interest), start=d(document.getElementById('nStart').value||iso(TODAY));
+  const t=totals();
+  const nr=Math.ceil(r.days/7), first=satFrom(addDays(start,1));
+  const up=upfrontOf(document.getElementById('nUpf').value,r.daily), out=amt-up;
+  document.getElementById('nSplit').innerHTML=`<div>เลขที่สัญญา <b>${nextContractNo()}</b></div>
+    <div>ค่างวด <b>${B(r.daily)}</b> /วัน</div>
+    <div>เก็บทุกเสาร์ <b>${B(r.daily*7)}</b> × ${nr} รอบ</div>
+    <div>ดอกเบี้ยรวม <b>${B(r.interest)}</b></div>
+    <div>ต้องเก็บรวม <b>${B(amt+r.interest)}</b></div>
+    <div style="background:var(--accent-soft);color:var(--accent)">หักงวดแรก <b>${B(up)}</b></div>
+    <div style="background:var(--accent);color:#fff">จ่ายให้ลูกค้าจริง <b>${B(out)}</b></div>
+    <div>เก็บรอบแรก <b>${thDate(first)}</b></div>
+    <div>รอบสุดท้าย <b>${thDate(addDays(first,7*(nr-1)))}</b></div>`;
+  document.getElementById('nCash').textContent = out>t.cash
+    ? `เงินสดพร้อมปล่อยมี ${B(t.cash)} บาท ไม่พอปล่อยยอดนี้`
+    : `ปล่อยแล้วเงินสดเหลือ ${B(t.cash-out)} บาท`;
+  document.getElementById('nCash').style.color = out>t.cash?'var(--bad)':'var(--muted)';
+}
+document.getElementById('nUpf').innerHTML=upfrontOptions();
+document.getElementById('nUpf').onchange=loanPreview;
+['nAmtCustom','nDays','nInt'].forEach(id=>document.getElementById(id).oninput=loanPreview);
+['nPlan','nAmt','nStart'].forEach(id=>document.getElementById(id).onchange=
+  id==='nPlan'?fillLoanAmounts:loanPreview);
+document.getElementById('nSave').onclick=async()=>{
+  const name=document.getElementById('nName').value.trim();
+  const t=document.getElementById('nToast');
+  if(!name){t.hidden=false;t.style.color='var(--bad)';t.textContent='ใส่ชื่อลูกค้าก่อน';return}
+  const v=nVals();
+  if(!v.amt||(v.custom&&!v.days)){t.hidden=false;t.style.color='var(--bad)';t.textContent='ใส่ยอดกู้และจำนวนวันให้ครบก่อน';return}
+  const c=await createContract({name,phone:document.getElementById('nPhone').value.trim(),
+    plan:v.plan,amount:v.amt,days:v.days||null,interest:v.custom?v.interest:null,
+    upfront_mode:document.getElementById('nUpf').value,
+    start:document.getElementById('nStart').value||iso(TODAY)});
+  if(!c){t.hidden=false;t.style.color='var(--bad)';t.textContent='เปิดสัญญาไม่สำเร็จ ลองอีกครั้ง';return}
+  document.getElementById('nName').value='';document.getElementById('nPhone').value='';
+  t.hidden=false;t.style.color='var(--ok)';
+  t.textContent=`เปิดสัญญา ${c.no} ให้ ${name} แล้ว · เก็บเสาร์ละ ${B(c.daily*7)} บาท`;
+  renderAll();
+};
+
+// ---------- ค่าใช้จ่าย ----------
+function renderExp(){
+  const sum=expenses.reduce((a,e)=>a+Number(e.amount||0),0);
+  document.getElementById('expTable').innerHTML=
+    `<thead><tr><th>วันที่</th><th>รายการ</th><th>ที่มา</th><th>หมายเหตุ</th><th class="r">ยอดเงิน</th></tr></thead><tbody>`+
+    expenses.slice().sort((a,b)=>String(b.date).localeCompare(String(a.date)))
+      .map(e=>`<tr><td>${thDate(e.date)}</td><td>${esc(e.item)}</td>
+        <td>${esc(e.source||'หลังบ้าน')}${e.collector?' · '+esc(e.collector):''}</td>
+        <td>${esc(e.note||'—')}</td><td class="r">${B(e.amount)}</td></tr>`).join('')+
+    `</tbody><tfoot><tr><th colspan="4">รวมทั้งปี 2569</th><th class="r">${B(sum)}</th></tr></tfoot>`;
+}
+document.getElementById('eSave').onclick=async()=>{
+  const item=document.getElementById('eItem').value.trim(), amt=Number(document.getElementById('eAmt').value)||0;
+  const t=document.getElementById('eToast');
+  if(!item||amt<=0){t.hidden=false;t.style.color='var(--bad)';t.textContent='ใส่รายการและยอดเงินก่อน';return}
+  const res=await dbAdd('expenses',{date:document.getElementById('eDate').value||iso(TODAY),
+    item,amount:amt,source:'หลังบ้าน',created_at:new Date().toISOString()}, dbExpenses);
+  if(res!==true){t.hidden=false;t.style.color='var(--bad)';t.textContent='บันทึกไม่สำเร็จ ลองอีกครั้ง';return}
+  document.getElementById('eItem').value='';document.getElementById('eAmt').value='';
+  t.hidden=false;t.style.color='var(--ok)';t.textContent=`บันทึก ${item} ${B(amt)} บาท แล้ว`;
+};
+
+// ---------- เรท ----------
+function renderRate(){
+  document.getElementById('rateTable').innerHTML=
+    `<thead><tr><th>แผน</th><th class="r">ยอดกู้</th><th class="r">ผ่อนวันละ</th><th class="r">เก็บทุกเสาร์</th>
+      <th class="r">จำนวนรอบ</th><th class="r">ดอกเบี้ยรวม</th><th class="r">เก็บรวมทั้งสัญญา</th><th class="r">คิดเป็น</th></tr></thead><tbody>`+
+    RATES.map(r=>`<tr><td>${r.plan}</td><td class="r">${B(r.amount)}</td><td class="r">${B(r.daily)}</td>
+      <td class="r">${B(r.daily*7)}</td><td class="r">${Math.ceil(r.days/7)}</td>
+      <td class="r">${B(r.interest)}</td><td class="r">${B(r.amount+r.interest)}</td>
+      <td class="r">${(r.interest/r.amount*100).toFixed(0)}%</td></tr>`).join('')+'</tbody>';
+  calcRate();
+}
+function calcRate(){
+  const amt=Number(document.getElementById('calcAmt').value)||0;
+  const r=rateFor(amt,document.getElementById('calcPlan').value);
+  document.getElementById('calcOut').innerHTML=`<div>ผ่อนวันละ <b>${B(r.daily)}</b></div>
+    <div>เก็บทุกเสาร์ <b>${B(r.daily*7)}</b></div>
+    <div>จำนวนรอบ <b>${Math.ceil(r.days/7)}</b></div><div>ดอกเบี้ยรวม <b>${B(r.interest)}</b></div>
+    <div>เก็บรวม <b>${B(amt+r.interest)}</b></div>
+    <div>เก็บครบวันที่ <b>${thDate(addDays(satFrom(addDays(TODAY,1)),7*(Math.ceil(r.days/7)-1)))}</b></div>`;
+}
+document.getElementById('calcAmt').oninput=calcRate;
+document.getElementById('calcPlan').onchange=calcRate;
+
+// ---------- กำไร & ปันผล ----------
+function renderProfit(){
+  const t=totals();
+  document.getElementById('profitTiles').innerHTML=`
+    <div class="tile hero"><div class="k">กำไรสุทธิปี 2569</div><div class="v">${B(t.net)}</div><div class="s">ดอกที่เก็บได้ ${B(t.interestPaid)} − ค่าใช้จ่าย ${B(t.exp)}</div></div>
+    <div class="tile"><div class="k">ยอดเก็บได้ทั้งปี</div><div class="v">${B(t.collected)}</div><div class="s">เงินต้นคืนแล้ว ${B(t.principalPaid)}</div></div>
+    <div class="tile"><div class="k">ดอกค้างรับ</div><div class="v">${B(contracts.reduce((a,c)=>{const s=state(c);return a+(s.st==='pending'?0:c.interest-s.interestPaid)},0))}</div><div class="s">จากสัญญาที่ยังเดินอยู่</div></div>
+    <div class="tile"><div class="k">หนี้เสียที่ตัดออก</div><div class="v">0</div><div class="s">ยังไม่มีสัญญาเกินกำหนด 30 วัน</div></div>`;
+  const rows=THM.map((m,i)=>{
+    const ps=payments.filter(p=>Number(p.date.split('-')[1])===i+1);
+    let col=0,pr=0,gr=0;
+    ps.forEach(p=>{const c=contracts.find(x=>x.no===p.no),rp=c.amount/c.total;
+      col+=p.amount;pr+=p.amount*rp;gr+=p.amount*(1-rp)});
+    const ex=expenses.filter(e=>Number(e.date.split('-')[1])===i+1).reduce((a,e)=>a+e.amount,0);
+    const ln=contracts.filter(c=>Number(c.start.split('-')[1])===i+1&&state(c).st!=='pending')
+      .reduce((a,c)=>a+c.amount,0);
+    return {m,col,pr,gr,ex,ln,net:gr-ex,any:col||ex||ln};
+  });
+  const sum=k=>rows.reduce((a,r)=>a+r[k],0);
+  document.getElementById('monthTable').innerHTML=
+    `<thead><tr><th>เดือน</th><th class="r">ยอดปล่อยกู้</th><th class="r">ยอดเก็บได้</th><th class="r">เงินต้นคืน</th>
+      <th class="r">กำไร (ดอก)</th><th class="r">ค่าใช้จ่าย</th><th class="r">กำไรสุทธิ</th></tr></thead><tbody>`+
+    rows.map(r=>`<tr style="${r.any?'':'color:var(--muted)'}"><td>${r.m}</td>
+      <td class="r">${r.ln?B(r.ln):'—'}</td><td class="r">${r.col?B(r.col):'—'}</td><td class="r">${r.pr?B(r.pr):'—'}</td>
+      <td class="r">${r.gr?B(r.gr):'—'}</td><td class="r">${r.ex?B(r.ex):'—'}</td>
+      <td class="r">${r.any?B(r.net):'—'}</td></tr>`).join('')+
+    `</tbody><tfoot><tr><th>รวมปี 2569</th><th class="r">${B(sum('ln'))}</th><th class="r">${B(sum('col'))}</th>
+      <th class="r">${B(sum('pr'))}</th><th class="r">${B(sum('gr'))}</th><th class="r">${B(sum('ex'))}</th>
+      <th class="r">${B(sum('net'))}</th></tr></tfoot>`;
+  renderShare();
+}
+function renderShare(){
+  const a=Math.max(0,Math.min(100,Number(document.getElementById('shareA').value)||0));
+  document.getElementById('shareB').value=100-a;
+  const net=totals().net;
+  document.getElementById('shareOut').innerHTML=
+    `<div>กำไรสุทธิ <b>${B(net)}</b></div>
+     <div>Dgame (${a}%) <b>${B(net*a/100)}</b></div>
+     <div>เปี๊ยก (${100-a}%) <b>${B(net*(100-a)/100)}</b></div>
+     <div>เงินทุน Dgame <b>${B(CAPITAL)}</b></div>`;
+}
+document.getElementById('shareA').oninput=renderShare;
+
+// ---------- สคีมา ----------
+const SCHEMA=[
+  ['customers',[['id','text pk'],['name','text'],['phone','text'],['note','text'],['created_at','timestamptz']]],
+  ['contracts',[['contract_no','text pk'],['customer_id','fk'],['plan','text'],['amount','numeric'],['daily','numeric'],['days','int'],['interest','numeric'],['start_date','date'],['end_date','date'],['status','enum']]],
+  ['payments',[['id','uuid pk'],['contract_no','fk'],['paid_at','date'],['amount','numeric'],['principal','numeric'],['profit','numeric'],['collector','text'],['status','pending/approved'],['note','text']]],
+  ['visits',[['id','uuid pk'],['contract_no','fk'],['reason','text'],['collector','text'],['at','timestamptz']]],
+  ['handovers',[['id','uuid pk'],['collector','text'],['work_date','date'],['count','int'],['total','numeric']]],
+  ['rate_plans',[['plan','text'],['amount','numeric'],['daily','numeric'],['days','int'],['interest','numeric']]],
+  ['expenses',[['id','uuid pk'],['spent_at','date'],['item','text'],['amount','numeric']]],
+  ['capital_ledger',[['id','uuid pk'],['partner','text'],['kind','ลงทุน/ปันผล'],['amount','numeric'],['moved_at','date']]],
+];
+document.getElementById('schemaBox').innerHTML=SCHEMA.map(([t,cols])=>
+  `<section><h3>${t}</h3><ul>${cols.map(([c,ty])=>`<li>${c}<span>${ty}</span></li>`).join('')}</ul></section>`).join('');
+
+// ---------- หลังบ้าน: รายการจากหน้าบ้าน ----------
+function renderInbox(){
+  const pend = inbox.filter(r=>r.status==='pending')
+    .sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at)));
+  const appr = inbox.filter(r=>r.status==='approved');
+  const sum = a => a.reduce((x,r)=>x+(Number(r.amount)||0),0);
+  const nb=document.getElementById('navPend');
+  if(nb){ nb.hidden=!pend.length; nb.textContent=pend.length }
+  const tl=document.getElementById('inboxTiles');
+  if(tl) tl.innerHTML=`
+    <div class="tile ${pend.length?'hero':''}"><div class="k">รออนุมัติ</div><div class="v">${B(sum(pend))}</div><div class="s">${pend.length} รายการ</div></div>
+    <div class="tile"><div class="k">อนุมัติแล้ว</div><div class="v">${B(sum(appr))}</div><div class="s">${appr.length} รายการ · เข้าบัญชีแล้ว</div></div>
+    <div class="tile"><div class="k">เก็บไม่ได้</div><div class="v">${visits.length}</div><div class="s">บันทึกจากการเดินเก็บ</div></div>
+    <div class="tile"><div class="k">ปิดรอบนำส่ง</div><div class="v">${handovers.length}</div><div class="s">ครั้ง</div></div>`;
+
+  document.getElementById('pendTable').innerHTML=
+    `<thead><tr><th>วันที่รับเงิน</th><th>รอบที่ปิดยอด</th><th>บันทึกเมื่อ</th><th>ลูกค้า</th><th>สัญญา</th><th class="r">ยอด</th><th class="r">คิดเป็นงวด</th>
+      <th>ผู้เก็บ</th><th>หมายเหตุ</th><th></th></tr></thead><tbody>`+
+    (pend.length?pend.map(r=>`<tr>
+      <td>${r.paid_at?thDate(r.paid_at):'—'}</td>
+      <td>${thDate(roundOf(r))}${isBackdated(r)?'<span class="backtag">ย้อนหลัง</span>':''}</td>
+      <td>${r.created_at?thDate(String(r.created_at).slice(0,10)):'—'}</td>
+      <td>${esc(r.customer||'')}</td><td class="mono">${esc(r.contract_no||'')}</td>
+      <td class="r">${B(r.amount)}</td><td class="r">${Number(r.installments||0).toFixed(1)}</td>
+      <td>${esc(r.collector||'—')}</td><td>${esc(r.note||'—')}</td>
+      <td class="r"><button class="ghost" data-ok="${r.id}">อนุมัติ</button>
+        <button class="ghost" data-no="${r.id}" style="color:var(--bad)">ตีกลับ</button></td></tr>`).join('')
+     :`<tr><td colspan="10" style="color:var(--muted)">ยังไม่มีรายการส่งเข้ามา</td></tr>`)+'</tbody>';
+  document.querySelectorAll('#pendTable [data-ok]').forEach(b=>b.onclick=()=>decide(b.dataset.ok,'approved'));
+  document.querySelectorAll('#pendTable [data-no]').forEach(b=>b.onclick=()=>decide(b.dataset.no,'rejected'));
+
+  renderApps();
+  document.getElementById('visitTable').innerHTML=
+    `<thead><tr><th>วันที่</th><th>ลูกค้า</th><th>สัญญา</th><th>เหตุผล</th><th>ผู้เก็บ</th></tr></thead><tbody>`+
+    (visits.length?visits.slice().sort((a,b)=>String(b.at).localeCompare(String(a.at))).map(v=>
+      `<tr><td>${v.at?thDate(String(v.at).slice(0,10)):'—'}</td><td>${esc(v.customer||'')}</td>
+       <td class="mono">${esc(v.contract_no||'')}</td><td>${esc(v.reason||'')}</td><td>${esc(v.collector||'—')}</td></tr>`).join('')
+     :`<tr><td colspan="5" style="color:var(--muted)">ไม่มีรายการ</td></tr>`)+'</tbody>';
+
+  document.getElementById('handTable').innerHTML=
+    `<thead><tr><th>วันที่</th><th>ผู้เก็บ</th><th class="r">ราย</th><th class="r">เก็บได้</th>
+      <th class="r">ค่าน้ำมัน</th><th class="r">อื่นๆ</th><th class="r">นำส่งสุทธิ</th><th>หมายเหตุ</th></tr></thead><tbody>`+
+    (handovers.length?handovers.slice().sort((a,b)=>String(b.date).localeCompare(String(a.date))).map(h=>
+      `<tr><td>${h.date?thDate(h.date):'—'}</td><td>${esc(h.collector||'—')}</td>
+       <td class="r">${h.count||0}</td><td class="r">${B(h.total||0)}</td>
+       <td class="r">${h.fuel?B(h.fuel):'—'}</td>
+       <td class="r">${h.other?B(h.other)+(h.other_item?' ('+esc(h.other_item)+')':''):'—'}</td>
+       <td class="r">${B(h.net!=null?h.net:(h.total||0))}</td><td>${esc(h.note||'—')}</td></tr>`).join('')
+     :`<tr><td colspan="8" style="color:var(--muted)">ยังไม่มีการปิดรอบ</td></tr>`)+'</tbody>';
+}
+const SHOTS={id:'บัตรประชาชน',home:'รูปบ้าน',shop:'รูปร้าน'};
+function isBackdated(r){            // ย้อนหลัง = ลงเข้ารอบที่ปิดไปแล้ว
+  return roundOf(r) < lastRoundDate();
+}
+function thumb(url,label){
+  return `<a href="${esc(url)}" target="_blank" rel="noopener" title="${esc(label)}"><img src="${esc(url)}" alt="${esc(label)}"></a>`;
+}
+function thumbsHTML(ph){
+  ph=ph||{};
+  const fixed=['id','home','shop'].map(k=>ph[k]&&ph[k].url?thumb(ph[k].url,SHOTS[k]):`<div class="none">ไม่มี${SHOTS[k]}</div>`);
+  const extra=(ph.extra||[]).filter(p=>p&&p.url).map((p,i)=>thumb(p.url,'รูปเพิ่มเติม '+(i+1)));
+  return `<div class="thumbs">${fixed.concat(extra).join('')}</div>`;
+}
+function photoTotal(ph){
+  ph=ph||{};
+  return ['id','home','shop'].filter(k=>ph[k]&&ph[k].url).length+((ph.extra||[]).filter(p=>p&&p.url).length);
+}
+function amtOptions(plan,sel){
+  return RATES.filter(r=>r.plan===plan)
+    .map(r=>`<option value="${r.amount}" ${Number(sel)===r.amount?'selected':''}>${B(r.amount)} บาท</option>`).join('');
+}
+function cardVals(card){
+  const custom=card.querySelector('[data-f="plan"]').value==='custom';
+  const sel=card.querySelector('[data-f="amt"]').value;
+  const amt=sel==='custom'?Number(card.querySelector('[data-f="amtc"]').value)||0:Number(sel)||0;
+  return {custom, amt,
+    plan: custom?'กำหนดเอง':card.querySelector('[data-f="plan"]').value,
+    days: custom?Number(card.querySelector('[data-f="days"]').value)||0:0,
+    interest: custom?Number(card.querySelector('[data-f="int"]').value)||0:0,
+    start: card.querySelector('[data-f="start"]').value||thisRoundDate(),
+    upfront_mode: card.querySelector('[data-f="upf"]').value};
+}
+function appPreviewRow(card){
+  const v=cardVals(card);
+  card.querySelector('[data-c="amt"]').hidden = card.querySelector('[data-f="amt"]').value!=='custom';
+  card.querySelector('[data-c="days"]').hidden = !v.custom;
+  card.querySelector('[data-c="int"]').hidden = !v.custom;
+  const r=rateFor(v.amt,v.plan,v.days,v.interest);
+  const nr=Math.ceil(r.days/7), first=satFrom(addDays(d(v.start),1)), cash=totals().cash;
+  const up=upfrontOf(v.upfront_mode,r.daily), out=v.amt-up;
+  card.querySelector('[data-out]').innerHTML=`<div>เลขที่สัญญา <b>${nextContractNo()}</b></div>
+    <div>ผ่อนวันละ <b>${B(r.daily)}</b> × ${r.days} วัน</div>
+    <div>เก็บทุกเสาร์ <b>${B(r.daily*7)}</b> × ${nr} รอบ</div>
+    <div>ต้องเก็บรวม <b>${B(v.amt+r.interest)}</b> (กำไร ${B(r.interest)})</div>
+    <div style="background:var(--accent-soft);color:var(--accent)">หักงวดแรก <b>${B(up)}</b></div>
+    <div style="background:var(--accent);color:#fff">จ่ายให้ลูกค้าจริง <b>${B(out)}</b></div>
+    <div>รอบแรก <b>${thDate(first)}</b></div>
+    <div style="color:${out>cash?'var(--bad)':'var(--muted)'}">${out>cash
+      ? 'เงินสดมี '+B(cash)+' ไม่พอปล่อย' : 'ปล่อยแล้วเหลือ '+B(cash-out)}</div>`;
+}
+function renderApps(){
+  const box=document.getElementById('approveBox'); if(!box) return;
+  const pend=apps.filter(a=>a.status==='pending')
+    .sort((a,b)=>String(a.created_at).localeCompare(String(b.created_at)));
+  const want=pend.reduce((s,a)=>s+Number(a.amount||0),0), t=totals();
+  const nb=document.getElementById('navApp');
+  if(nb){ nb.hidden=!pend.length; nb.textContent=pend.length }
+  document.getElementById('loanTiles').innerHTML=`
+    <div class="tile ${pend.length?'hero':''}"><div class="k">รอตรวจและอนุมัติ</div><div class="v">${pend.length}</div>
+      <div class="s">คำขอจากหน้าบ้าน</div></div>
+    <div class="tile"><div class="k">ยอดที่ขอกู้รวม</div><div class="v">${B(want)}</div>
+      <div class="s">ถ้าอนุมัติทั้งหมด</div></div>
+    <div class="tile"><div class="k">เงินสดพร้อมปล่อย</div><div class="v">${B(t.cash)}</div>
+      <div class="s">${want>t.cash?'ไม่พอปล่อยทุกราย':'เพียงพอ'}</div></div>`;
+
+  box.innerHTML = pend.length ? pend.map(a=>`
+    <div class="app" data-app="${a.id}">
+      <div class="hd"><b>${esc(a.name)}</b>
+        <span class="hint">ส่งโดย ${esc(a.collector||'—')}${a.created_at?' · '+thDate(String(a.created_at).slice(0,10)):''}</span></div>
+      <div class="meta"><span class="mono">${esc(a.phone||'—')}</span>
+        <span>ขอกู้ ${B(a.amount)} · ${esc(a.plan)}</span>
+        <span>รูปประกอบ ${photoTotal(a.photos)} รูป</span></div>
+      ${(()=>{ const h=custStats(custKey(a),null);
+        return `<div class="meta"><span class="pill ${h.cls}">${h.grade}</span>${
+          h.list.length?`<span>เคยกู้ ${h.list.length} สัญญา · ปิดครบ ${h.closed}${h.open?' · ยังเดินอยู่ '+h.open:''}</span>
+            <span>ดอกที่เคยจ่าย ${B(h.interest)}</span>`:'<span>ยังไม่เคยกู้กับเรา</span>'}</div>`;})()}
+      ${a.note?`<div class="hint">หมายเหตุ: ${esc(a.note)}</div>`:''}
+      ${thumbsHTML(a.photos)}
+      ${photoTotal(a.photos)<2?'<div class="hint" style="color:var(--warn)">รูปไม่ครบ ควรให้คนเก็บถ่ายเพิ่มก่อนอนุมัติ</div>':''}
+      <div class="form" style="gap:10px">
+        <label>แผนผ่อน<select data-f="plan">
+          <option ${a.plan==='28 วัน'?'selected':''}>28 วัน</option>
+          <option ${a.plan==='60 วัน'?'selected':''}>60 วัน</option>
+          <option value="custom" ${a.days?'selected':''}>กำหนดเอง</option></select></label>
+        <label>ยอดกู้ที่อนุมัติ<select data-f="amt">${amtOptions(a.plan,a.amount)}
+          <option value="custom" ${!RATES.some(r=>r.amount===Number(a.amount))?'selected':''}>กำหนดเอง</option></select></label>
+        <label data-c="amt" hidden>ยอดกู้ (บาท)<input type="number" data-f="amtc" min="500" step="500" value="${Number(a.amount)||0}"></label>
+        <label data-c="days" hidden>จำนวนวัน<input type="number" data-f="days" min="7" step="1" value="${Number(a.days)||45}"></label>
+        <label data-c="int" hidden>ดอกเบี้ยรวม<input type="number" data-f="int" min="0" step="100" value="${Number(a.interest)||0}"></label>
+        <label>วันเริ่มสัญญา<input type="date" data-f="start" value="${esc(a.start||thisRoundDate())}"></label>
+        <label>หักงวดแรก<select data-f="upf">${upfrontOptions(a.upfront_mode)}</select></label>
+      </div>
+      <div class="split" data-out></div>
+      <div class="acts"><button class="go" data-appok="${a.id}">อนุมัติเปิดสัญญา</button>
+        <button class="ghost" data-appno="${a.id}" style="color:var(--bad)">ปฏิเสธคำขอ</button></div>
+    </div>`).join('')
+    : '<p class="hint">ยังไม่มีคำขอรออนุมัติ · คำขอจะเข้ามาเมื่อคนเดินเก็บกด “เปิดลูกค้าใหม่” ที่หน้าบ้าน</p>';
+
+  box.querySelectorAll('.app[data-app]').forEach(card=>{
+    appPreviewRow(card);
+    card.querySelector('[data-f="plan"]').onchange=e=>{
+      const sel=card.querySelector('[data-f="amt"]'), keep=sel.value;
+      sel.innerHTML=amtOptions(e.target.value==='custom'?'60 วัน':e.target.value,keep)
+        +`<option value="custom" ${keep==='custom'?'selected':''}>กำหนดเอง</option>`;
+      appPreviewRow(card); };
+    card.querySelectorAll('[data-f="amt"],[data-f="start"],[data-f="amtc"],[data-f="days"],[data-f="int"]')
+      .forEach(el=>{ el.onchange=()=>appPreviewRow(card); el.oninput=()=>appPreviewRow(card) });
+  });
+  box.querySelectorAll('[data-appok]').forEach(b=>b.onclick=()=>decideApp(b.dataset.appok,true));
+  box.querySelectorAll('[data-appno]').forEach(b=>b.onclick=()=>decideApp(b.dataset.appno,false));
+}
+async function decideApp(id,ok){
+  const a=apps.find(x=>x.id===id); if(!a) return;
+  if(ok){
+    const card=document.querySelector(`.app[data-app="${id}"]`);
+    const o={...a};
+    if(card){
+      const v=cardVals(card);
+      o.plan=v.plan; o.amount=v.amt||a.amount; o.start=v.start;
+      o.days=v.custom?v.days:null; o.interest=v.custom?v.interest:null;
+      o.upfront_mode=v.upfront_mode;
+    }
+    const c=await createContract(o);
+    if(!c){ syncLabel('เปิดสัญญาไม่สำเร็จ',false); return }
+    a.contract_no=c.no;
+  }
+  const patch={status:ok?'approved':'rejected',decided_at:new Date().toISOString(),
+    contract_no:a.contract_no||''};
+  if(dbOn && !String(id).startsWith('local-')){
+    try{ await DB.doc('applications/'+id).update(patch) }catch(e){}
+  } else { Object.assign(a,patch); renderInbox() }
+}
+async function decide(id,status){
+  const r=inbox.find(x=>x.id===id); if(!r) return;
+  if(dbOn && !String(id).startsWith('local-')){
+    try{ await DB.doc('collections/'+id).update({status,decided_at:new Date().toISOString()}) }
+    catch(e){ syncLabel('อัปเดตไม่สำเร็จ ('+(e.code||'')+')',false); return }
+  } else { r.status=status; rebuildPayments(); renderAll() }
+}
+
+// ---------- ปฏิทินเก็บเงิน + การ์ดผ่อน ----------
+function recOf(no){
+  const m={};
+  SEEDED.filter(p=>p.no===no).forEach(p=>{
+    m[p.date]=m[p.date]||{amount:0,status:'approved',ids:[]}; m[p.date].amount+=p.amount; });
+  inbox.filter(r=>r.contract_no===no&&r.status!=='rejected').forEach(r=>{
+    const k=roundOf(r); m[k]=m[k]||{amount:0,status:r.status,ids:[]};
+    m[k].amount+=Number(r.amount)||0; m[k].ids.push(r.id);
+    if(r.status==='pending') m[k].status='pending'; });
+  return m;
+}
+const WK=['จ','อ','พ','พฤ','ศ','ส','อา'];
+function roundAmountOn(c,date){ const r=rounds(c).find(r=>r.date===date); return r?r.amount:c.daily*7 }
+function calDays(c,tappable){
+  const recs=recOf(c.no), start=d(c.start), lead=(start.getDay()+6)%7;
+  let g=WK.map(w=>`<div class="wk">${w}</div>`).join('');
+  for(let i=0;i<lead;i++) g+='<div class="d gap"></div>';
+  for(let i=0;i<c.days;i++){
+    const x=addDays(start,i), k=iso(x), rec=recs[k], sat=x.getDay()===SAT, future=x>TODAY;
+    const cls=(rec?(rec.status==='pending'?'pend':'appr'):(future?'off':''))+(sat?' sat':'');
+    g+=`<div class="d ${cls}" ${tappable&&sat&&!future?`data-tick="${c.no}|${k}|${roundAmountOn(c,k)}"`:''}
+      title="งวดที่ ${i+1} · ${thDate(k)}${sat?' · วันเก็บเงิน':''}"><b>${x.getDate()}</b>
+      <i>${rec?'✓':i+1}</i></div>`;
+  }
+  return `<div class="cald">${g}</div>`;
+}
+function roundView(c){                       // สรุปรายรอบ: ต้องเก็บ / เก็บได้ / ขาด
+  const recs=recOf(c.no);
+  return rounds(c).map(r=>{
+    const rec=recs[r.date]||null, got=rec?rec.amount:0;
+    return {...r, rec, got, short:Math.max(0,r.amount-got),
+      st: got>=r.amount-0.5 ? 'full' : got>0 ? 'part' : (d(r.date)>TODAY ? 'future' : 'none')};
+  });
+}
+const RST={full:['เก็บครบ','p-ok'],part:['เก็บไม่ครบ','p-warn'],
+           none:['ยังไม่เก็บ','p-bad'],future:['ยังไม่ถึงรอบ','p-idle']};
+function calHTML(c,tappable){
+  let g='';
+  roundView(c).forEach(r=>{
+    const x=d(r.date), future=r.st==='future';
+    const cls = r.st==='part' ? 'part'
+      : r.rec ? (r.rec.status==='pending'?'pend':'appr') : (future?'off':'');
+    const tick = tappable && !future && (!r.rec || r.rec.status==='pending');
+    g+=`<div class="d ${cls}" ${tick?`data-tick="${c.no}|${r.date}|${r.amount}"`:''}
+      title="รอบ ${r.k} · เสาร์ที่ ${thDate(r.date)} · งวด ${r.from}-${r.to} · ${RST[r.st][0]}">
+      <u>รอบ ${r.k}</u><b>${thShort(x)}</b>
+      <i>${r.st==='full'?'✓ '+B(r.got):r.st==='part'?B(r.got)+'/'+B(r.amount):B(r.amount)}</i></div>`;
+  });
+  return `<div class="cal">${g}</div>`;
+}
+function roundsTableHTML(c,tappable){
+  const rs=roundView(c);
+  return `<thead><tr><th>รอบ</th><th>วันเสาร์ที่</th><th class="r">ต้องเก็บ</th>
+    <th class="r">เก็บได้</th><th class="r">ขาด</th><th class="r">ครั้งที่รับ</th><th>สถานะ</th></tr></thead><tbody>`+
+    rs.map(r=>{
+      const tick=tappable && r.st!=='future' && (!r.rec || r.rec.status==='pending');
+      return `<tr ${tick?`class="clickable" data-tick="${c.no}|${r.date}|${r.amount}"`:''}>
+      <td class="mono">${r.k}</td><td>${thDate(r.date)}</td>
+      <td class="r">${B(r.amount)}</td><td class="r">${r.got?B(r.got):'—'}</td>
+      <td class="r" style="${r.short&&r.st!=='future'?'color:var(--warn);font-weight:600':''}">${
+        r.st==='future'?'—':r.short?B(r.short):'—'}</td>
+      <td class="r">${r.rec?r.rec.ids.length||1:'—'}</td>
+      <td><span class="pill ${RST[r.st][1]}">${RST[r.st][0]}</span></td></tr>`}).join('')+'</tbody>';
+}
+const CALLEG=`<div class="callegend"><span><i style="background:var(--ok)"></i>อนุมัติแล้ว</span>
+  <span><i style="background:var(--accent)"></i>รออนุมัติ</span>
+  <span><i style="background:var(--surface-2);border:1px solid var(--line)"></i>ยังไม่เก็บ · กดเพื่อติ๊ก</span></div>`;
+function bindTicks(){
+  document.querySelectorAll('[data-tick]').forEach(el=>el.onclick=ev=>{
+    ev.stopPropagation(); tick(el.dataset.tick); });
+}
+async function tick(key){
+  const [no,date,amtStr]=key.split('|');
+  const c=contracts.find(x=>x.no===no), r=recOf(no)[date];
+  if(r){
+    if(r.status!=='pending'||!r.ids.length){ ftoast('รายการนี้อนุมัติแล้ว ต้องแก้ที่หลังบ้าน',false); return }
+    for(const id of r.ids){
+      if(dbOn && !String(id).startsWith('local-')){ try{ await DB.doc('collections/'+id).delete() }catch(e){} }
+      else { const i=inbox.findIndex(z=>z.id===id); if(i>=0) inbox.splice(i,1) }
+    }
+    if(!dbOn){ rebuildPayments(); renderAll() }
+    ftoast('ยกเลิกรายการวันที่ '+thDate(date),true); return;
+  }
+  const amt=Math.min(Number(amtStr)||c.daily*7, Math.round(state(c).remain));
+  const res=await dbAdd('collections',{contract_no:no,customer:c.name,amount:amt,
+    installments:Number((amt/c.daily).toFixed(2)),
+    paid_at:date, round_date:date, collector:collector(),note:'ติ๊กรอบเสาร์',status:'pending',
+    backdated:date<lastRoundDate(), created_at:new Date().toISOString()}, inbox);
+  if(res!==true){ ftoast('ส่งไม่สำเร็จ ลองอีกครั้ง',false); return }
+  ftoast('ติ๊กเก็บรอบ '+thDate(date)+' · '+B(amt)+' บาท',true);
+  renderAll();
+}
+
+// ---------- สลิปส่งลูกค้า ----------
+let slipNo=null;
+function slipData(c){
+  const s=state(c);
+  const ps=payments.filter(p=>p.no===c.no).sort((a,b)=>b.date.localeCompare(a.date));
+  const next=rounds(c).find(r=>d(r.date)>TODAY) || null;   // วันเก็บครั้งถัดไปจริง
+  const need=Math.round(s.collectNext);
+  return {s,ps,next,need};
+}
+function openSlip(no){
+  const c=contracts.find(x=>x.no===no); if(!c) return;
+  slipNo=no;
+  const {s,ps,next,need}=slipData(c);
+  const daysLeft=Math.max(0,dayDiff(d(c.end),TODAY));
+  const shown=ps.slice(0,6);
+  document.getElementById('slipBody').innerHTML=`
+    <div class="sh"><b>สรุปยอดผ่อนชำระ</b><i>ณ ${thDate(TODAY)}</i></div>
+    <div class="body">
+      <div class="who">${esc(c.name)}</div>
+      <div class="cno">เลขที่สัญญา ${c.no}</div>
+
+      <div class="g4">
+        <div><span>ยอดกู้</span><b>${B(c.amount)}</b></div>
+        <div><span>ผ่อนวันละ</span><b>${B(c.daily)}</b></div>
+        <div><span>เก็บทุกเสาร์</span><b>${B(c.daily*7)}</b></div>
+        <div><span>งวดทั้งหมด</span><b>${c.days}</b></div>
+      </div>
+      <div class="period"><span>${thDate(c.start)} ถึง ${thDate(c.end)}</span>
+        <em>${s.st==='closed'?'ปิดสัญญาแล้ว':'เหลืออีก '+daysLeft+' วัน'}</em></div>
+
+      <div class="two">
+        <div class="paid"><div class="k">ชำระมาแล้ว</div><div class="v">${B(s.paid)}</div>
+          <div class="s">${Math.floor(s.instPaid)} จาก ${c.days} งวด</div></div>
+        <div class="left"><div class="k">คงเหลือต้องชำระ</div><div class="v">${B(s.remain)}</div>
+          <div class="s">${s.st==='closed'?'ไม่มียอดค้าง':'อีก '+Math.ceil(s.remain/c.daily)+' งวด'}</div></div>
+      </div>
+      <div class="pbar"><i style="width:${s.pct}%"></i></div>
+      <div class="pct">ชำระแล้ว ${s.pct.toFixed(0)}% ของยอดทั้งสัญญา</div>
+
+      ${s.st==='closed'
+        ? `<div class="next done"><b>ชำระครบตามสัญญาแล้ว ขอบคุณครับ</b></div>`
+        : next
+          ? `<div class="next"><span>ชำระครั้งถัดไป<br>เสาร์ที่ ${thDate(next.date)}${
+              s.behindRounds?' · รวมค้าง '+s.behindRounds+' รอบ':''}</span><b>${B(need)}</b></div>`
+          : `<div class="next"><span>ครบกำหนดสัญญาแล้ว<br>กรุณาติดต่อเจ้าหน้าที่</span><b>${B(s.remain)}</b></div>`}
+
+      <div class="rows">รายการชำระล่าสุด</div>
+      <table><thead><tr><th>วันที่ชำระ</th><th class="r">จำนวนเงิน</th><th class="r">งวด</th></tr></thead>
+      <tbody>${shown.map(p=>`<tr><td>${thDate(p.date)}</td><td class="r">${B(p.amount)}</td>
+        <td class="r">${(p.amount/c.daily).toFixed(0)}</td></tr>`).join('')
+        || '<tr><td colspan="3" style="color:#6b7b80">ยังไม่มีรายการชำระ</td></tr>'}</tbody>
+      ${ps.length?`<tfoot><tr><td>รวมชำระมาแล้วทั้งหมด</td><td class="r">${B(s.paid)}</td>
+        <td class="r">${Math.floor(s.instPaid)}</td></tr></tfoot>`:''}
+      </table>
+      ${ps.length>shown.length?`<div class="pct" style="text-align:left;margin:7px 0 0">
+        แสดง ${shown.length} รายการล่าสุด จากทั้งหมด ${ps.length} รายการ</div>`:''}
+
+      <div class="ft">เอกสารออกจากระบบเมื่อ ${thDate(TODAY)} · ใช้เพื่อตรวจสอบยอดเท่านั้น</div>
+    </div>`;
+  document.getElementById('slipMsg').textContent='แคปหน้าจอส่วนนี้ส่งให้ลูกค้าได้เลย หรือกดบันทึกเป็นรูป';
+  document.getElementById('slipSheet').hidden=false;
+}
+function slipText(c){
+  const {s,next,need,ps}=slipData(c);
+  const L=['สรุปยอดผ่อนชำระ · '+thDate(TODAY),
+    'ชื่อ: '+c.name, 'สัญญา: '+c.no,
+    'ยอดกู้: '+B(c.amount)+' บาท · ผ่อนวันละ '+B(c.daily)+' บาท',
+    'เริ่มสัญญา: '+thDate(c.start)+' · หมดสัญญา: '+thDate(c.end),
+    'ชำระมาแล้ว: '+B(s.paid)+' บาท ('+Math.floor(s.instPaid)+'/'+c.days+' งวด)',
+    'คงเหลือ: '+B(s.remain)+' บาท'];
+  if(s.st!=='closed') L.push(next
+    ? 'ชำระครั้งถัดไป: '+B(need)+' บาท กำหนดเสาร์ที่ '+thDate(next.date)
+    : 'ครบกำหนดสัญญาแล้ว ยอดค้าง '+B(s.remain)+' บาท');
+  if(s.st==='closed') L.push('สถานะ: ชำระครบตามสัญญาแล้ว');
+  if(ps.length){ L.push('','ชำระล่าสุด:');
+    ps.slice(0,5).forEach(p=>L.push('  '+thDate(p.date)+' = '+B(p.amount)+' บาท')); }
+  return L.join('\n');
+}
+document.getElementById('slipClose').onclick=()=>{document.getElementById('slipSheet').hidden=true};
+document.getElementById('slipSheet').onclick=ev=>{ if(ev.target.id==='slipSheet') ev.currentTarget.hidden=true };
+document.getElementById('slipCopy').onclick=async()=>{
+  const c=contracts.find(x=>x.no===slipNo); if(!c) return;
+  const msg=document.getElementById('slipMsg'), txt=slipText(c);
+  try{ await navigator.clipboard.writeText(txt); msg.textContent='คัดลอกข้อความแล้ว วางในแชตได้เลย'; }
+  catch(e){
+    const ta=document.createElement('textarea'); ta.value=txt;
+    ta.style.cssText='position:fixed;left:0;top:0;width:100%;height:120px';
+    document.body.appendChild(ta); ta.select();
+    msg.textContent='กดค้างเพื่อคัดลอกข้อความในช่องด้านบน แล้วกดปิด';
+    setTimeout(()=>ta.remove(),15000);
+  }
+};
+function loadH2C(){
+  if(window.html2canvas) return Promise.resolve(window.html2canvas);
+  return new Promise((res,rej)=>{
+    const s=document.createElement('script');
+    s.src='https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+    s.onload=()=>res(window.html2canvas); s.onerror=()=>rej(new Error('load'));
+    document.head.appendChild(s);
+  });
+}
+async function saveBlob(filename,blob){
+  if(typeof downloads==='function'){
+    const dl=await downloads();
+    if(dl){ try{ await dl.save({filename,data:blob}); return true }catch(e){ if(e&&e.code==='declined') return true } }
+  }
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+  return true;
+}
+function slipBlob(){                       // สร้างรูปสลิปเป็น Blob
+  return (async()=>{
+    const h2c=await loadH2C();
+    const cv=await h2c(document.getElementById('slipBody'),
+      {backgroundColor:'#ffffff',scale:2,logging:false});
+    const b=await new Promise(r=>cv.toBlob(r,'image/png'));
+    if(!b) throw new Error('blob');
+    return b;
+  })();
+}
+document.getElementById('slipPic').onclick=()=>{
+  const c=contracts.find(x=>x.no===slipNo); if(!c) return;
+  const msg=document.getElementById('slipMsg');
+  msg.textContent='กำลังสร้างรูป…';
+  const bp=slipBlob();                      // เริ่มสร้างทันที ไม่ await เพื่อไม่ให้หลุด user gesture
+  if(navigator.clipboard && window.ClipboardItem){
+    navigator.clipboard.write([new ClipboardItem({'image/png':bp})])
+      .then(()=>{ msg.textContent='คัดลอกรูปแล้ว · กดวางในแชต LINE ได้เลย' })
+      .catch(()=>{ bp.then(b=>saveBlob('slip-'+c.no+'.png',b))
+        .then(()=>{ msg.textContent='เครื่องนี้คัดลอกรูปไม่ได้ · บันทึกเป็นไฟล์ให้แทนแล้ว' })
+        .catch(()=>{ msg.textContent='สร้างรูปไม่สำเร็จ ใช้วิธีแคปหน้าจอแทนได้' }); });
+  } else {
+    bp.then(b=>saveBlob('slip-'+c.no+'.png',b))
+      .then(()=>{ msg.textContent='เบราว์เซอร์นี้คัดลอกรูปไม่ได้ · บันทึกเป็นไฟล์ให้แทนแล้ว' })
+      .catch(()=>{ msg.textContent='สร้างรูปไม่สำเร็จ ใช้วิธีแคปหน้าจอแทนได้' });
+  }
+};
+document.getElementById('slipImg').onclick=async()=>{
+  const c=contracts.find(x=>x.no===slipNo); if(!c) return;
+  const msg=document.getElementById('slipMsg');
+  msg.textContent='กำลังสร้างรูป…';
+  try{
+    await saveBlob('slip-'+c.no+'.png', await slipBlob());
+    msg.textContent='บันทึกรูปแล้ว ส่งให้ลูกค้าได้เลย';
+  }catch(e){ msg.textContent='สร้างรูปไม่สำเร็จ ใช้วิธีแคปหน้าจอแทนได้' }
+};
+
+let csNo=null;
+function openCard(no){
+  const c=contracts.find(x=>x.no===no); if(!c) return;
+  csNo=no; const s=state(c);
+  const next=rounds(c).find(r=>d(r.date)>TODAY);
+  document.getElementById('csTitle').textContent='การ์ดผ่อน '+c.no;
+  document.getElementById('csBody').innerHTML=`
+    <div class="csblock" style="padding-top:14px">
+      <div class="cardtop">
+        <div><b>${esc(c.name)}</b><span class="mono">${c.no} · ${esc(c.phone)}</span></div>
+        ${pill(s.st)}
+      </div>
+      <div class="two">
+        <div class="paid"><div class="k">ชำระมาแล้ว</div><div class="v">${B(s.paid)}</div>
+          <div class="s">${Math.floor(s.instPaid)} จาก ${c.days} งวด</div></div>
+        <div class="left"><div class="k">คงเหลือ</div><div class="v">${B(s.remain)}</div>
+          <div class="s">${s.st==='closed'?'ปิดสัญญาแล้ว':'อีก '+Math.ceil(s.remain/c.daily)+' งวด'}</div></div>
+      </div>
+      <div class="pbar"><i style="width:${s.pct}%"></i></div>
+      ${s.st!=='closed'?`<div class="nextline">ต้องเก็บครั้งถัดไป <b>${B(Math.round(s.collectNext))}</b>
+        ${next?'· เสาร์ที่ '+thDate(next.date):'· เลยกำหนดสัญญาแล้ว'}
+        ${s.behindRounds?'<span class="backtag">ค้าง '+s.behindRounds+' รอบ</span>':''}</div>`:''}
+      <div class="facts">
+        <span>ยอดกู้ <b>${B(c.amount)}</b></span>
+        <span>ผ่อนวันละ <b>${B(c.daily)}</b></span>
+        <span>เก็บทุกเสาร์ <b>${B(c.daily*7)}</b></span>
+        <span>ต้องเก็บรวม <b>${B(c.total)}</b></span>
+        <span>${c.plan}</span>
+        <span>${thDate(c.start)} – ${thDate(c.end)}</span>
+      </div>
+    </div>
+    <div class="subhead">รอบเก็บเงิน · แตะแถวเพื่อบันทึกว่าเก็บรอบนั้นแล้ว</div>
+    <div class="scroll"><table>${roundsTableHTML(c,true)}</table></div>
+    <details class="daybox"><summary>ดูปฏิทินรายวันทั้ง ${c.days} งวด</summary>
+      <div style="padding:0 14px 14px">${calDays(c,false)}</div></details>`;
+  document.getElementById('cardSheet').hidden=false;
+  bindTicks();
+}
+document.getElementById('csClose').onclick=()=>{document.getElementById('cardSheet').hidden=true;csNo=null};
+document.getElementById('cardSheet').onclick=ev=>{
+  if(ev.target.id==='cardSheet'){ev.currentTarget.hidden=true;csNo=null} };
+
+
+function printableCard(c){
+  const s=state(c), recs=recOf(c.no), start=d(c.start);
+  let cells='';
+  for(let i=0;i<c.days;i++){
+    const x=addDays(start,i), rec=recs[iso(x)], sat=x.getDay()===SAT;
+    cells+=`<div class="cell${rec?' on':''}${sat?' sat':''}"><u>งวด ${i+1}</u>
+      <s>${x.getDate()}/${x.getMonth()+1}</s><em>${rec?'&#10003;':''}</em></div>`;
+  }
+  return `<!doctype html><html lang="th"><head><meta charset="utf-8">
+<title>การ์ดผ่อน ${c.no} ${c.name}</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;600;700&display=swap">
+<style>
+@page{size:A5;margin:10mm}
+*{box-sizing:border-box}
+body{font-family:'Noto Sans Thai','Sarabun',Tahoma,sans-serif;color:#111;margin:0;padding:10mm;font-size:9.5pt;line-height:1.45}
+h1{font-size:14pt;margin:0}
+.sub{font-size:8.5pt;color:#555;margin:1mm 0 4mm}
+table.info{width:100%;border-collapse:collapse;margin-bottom:4mm}
+table.info td{border:1px solid #bbb;padding:1.6mm 2mm;font-size:9pt;vertical-align:top}
+table.info td.k{background:#f2f2f2;width:22%;color:#444;font-size:8pt}
+.grid{display:grid;grid-template-columns:repeat(10,1fr);gap:1.2mm}
+.cell{border:1px solid #aaa;border-radius:1mm;min-height:10mm;padding:.8mm 0;text-align:center;
+  display:flex;flex-direction:column;justify-content:center;gap:.2mm}
+.cell u{text-decoration:none;font-size:5.5pt;color:#777}
+.cell s{text-decoration:none;font-size:8pt;font-weight:600}
+.cell em{font-style:normal;font-size:8pt;color:#0d7a72;min-height:3mm;line-height:1}
+.cell.sat{border:1.1pt solid #222}
+.cell.on{background:#e8f3f1;border-color:#0d7a72}
+.foot{margin-top:5mm;display:flex;justify-content:space-between;gap:6mm;font-size:8.5pt}
+.sign{flex:1;border-top:1px dotted #777;padding-top:1.5mm;text-align:center;color:#555}
+.hint{margin-top:3mm;font-size:7.5pt;color:#666}
+@media screen{body{max-width:148mm;margin:0 auto;box-shadow:0 0 0 1px #ddd}
+ .tip{background:#0d7a72;color:#fff;padding:2mm 3mm;border-radius:2mm;font-size:8.5pt;margin-bottom:4mm}}
+@media print{.tip{display:none}}
+</style></head><body>
+<div class="tip">กด Ctrl+P (หรือ Cmd+P) เพื่อสั่งปริ้นการ์ดนี้ · ขนาดกระดาษ A5</div>
+<h1>การ์ดผ่อนชำระ · เก็บทุกวันเสาร์</h1>
+<div class="sub">เลขที่สัญญา ${c.no} · พิมพ์เมื่อ ${thDate(TODAY)}</div>
+<table class="info">
+<tr><td class="k">ชื่อลูกค้า</td><td><b>${esc(c.name)}</b></td><td class="k">เบอร์โทร</td><td>${esc(c.phone)}</td></tr>
+<tr><td class="k">ยอดกู้</td><td>${B(c.amount)} บาท${c.upfront?' (หักงวดแรก '+B(c.upfront)+' รับจริง '+B(c.amount-c.upfront)+')':''}</td>
+    <td class="k">แผนผ่อน</td><td>${c.plan}</td></tr>
+<tr><td class="k">ผ่อนวันละ</td><td>${B(c.daily)} บาท</td><td class="k">เก็บทุกวันเสาร์</td><td><b>${B(c.daily*7)} บาท</b></td></tr>
+<tr><td class="k">วันเริ่มสัญญา</td><td>${thDate(c.start)}</td><td class="k">ต้องเก็บรวม</td><td>${B(c.total)} บาท</td></tr>
+<tr><td class="k">จ่ายมาแล้ว</td><td>${Math.floor(s.instPaid)}/${c.days} งวด (${B(s.paid)} บาท)</td>
+    <td class="k">คงเหลือ</td><td><b>${B(s.remain)} บาท</b></td></tr>
+</table>
+<div class="grid">${cells}</div>
+<div class="hint">ช่องกรอบเข้ม = วันเสาร์ วันที่ผู้เก็บเงินเข้าเก็บ (รอบละ 7 งวด) · ช่องที่มีเครื่องหมายถูกคือเก็บแล้ว
+ช่องที่เหลือให้เซ็นกำกับทุกครั้งที่รับเงิน</div>
+<div class="foot"><span class="sign">ลงชื่อผู้กู้</span><span class="sign">ลงชื่อผู้เก็บเงิน</span></div>
+</body></html>`;
+}
+document.getElementById('csSave').onclick=()=>{
+  const c=contracts.find(x=>x.no===csNo); if(!c) return;
+  const w=window.open('','_blank');
+  if(!w){ ftoast('เบราว์เซอร์บล็อกหน้าต่างใหม่ · อนุญาตป๊อปอัปก่อน',false); return }
+  w.document.write(printableCard(c)); w.document.close();
+  setTimeout(()=>{ try{ w.focus(); w.print() }catch(e){} }, 500);
+};
+
+// ---------- หน้าบ้าน ----------
+let fFilter='today', fOpen=null, fQuery='';
+function collector(){
+  const v=document.getElementById('fName').value.trim();
+  if(v) {try{localStorage.setItem('collector',v)}catch(e){}}
+  return v||'ไม่ระบุชื่อ';
+}
+function fieldDate(){ return document.getElementById('fDate').value||iso(TODAY) }
+function todayRows(){ const dt=fieldDate();
+  return inbox.filter(r=>roundOf(r)===dt && r.status!=='rejected') }
+function renderField(){
+  const dt=fieldDate(), rows=todayRows();
+  const isSat=d(dt).getDay()===SAT, last=lastRoundDate();
+  const back=Math.round(dayDiff(d(last),d(dt))/7);
+  document.getElementById('fDateLabel').innerHTML = 'วันนี้ '+thDate(TODAY)+' · ผู้เก็บ '+esc(collector());
+  const warn=document.getElementById('rWarn');
+  if(dt>iso(TODAY)){
+    warn.hidden=false; warn.textContent='รอบนี้ยังมาไม่ถึง · บันทึกล่วงหน้าไม่ได้';
+  } else if(back>0){
+    warn.hidden=false;
+    warn.textContent='กำลังลงบันทึกย้อนหลัง '+back+' รอบ (เสาร์ที่ '+thDate(dt)+') ทุกรายการที่บันทึกจะลงวันที่นี้';
+  } else if(!isSat){
+    warn.hidden=false; warn.textContent='วันที่นี้ไม่ใช่วันเสาร์ · จะบันทึกเป็นรอบพิเศษนอกรอบปกติ';
+  } else warn.hidden=true;
+  document.getElementById('rNext').disabled = dt>=last;
+  const got=rows.reduce((a,r)=>a+(Number(r.amount)||0),0);
+  const list = contracts.map(c=>({c,s:state(c)})).filter(({s})=>['ok','watch','risk'].includes(s.st));
+  const target = list.reduce((a,{s})=>a+s.collectNext,0);
+  const waiting=rows.filter(r=>r.status==='pending');
+  document.getElementById('fSum').innerHTML=`<div class="k">เก็บได้รอบนี้</div><div class="big">${B(got)}</div>
+    <div class="row"><span>${rows.length} / ${list.length} ราย</span><span>ต้องเก็บรอบนี้ ${B(target)}</span>
+    <span>${waiting.length?'รอเจ้าของอนุมัติ '+waiting.length+' รายการ':'อนุมัติครบแล้ว'}</span></div>`;
+  document.getElementById('fCash').textContent=B(got);
+
+  const paidNos = new Set(rows.map(r=>r.contract_no));
+  const q=fQuery.trim().toLowerCase();
+  const view = list.filter(({c,s})=>
+    (q ? true :
+     fFilter==='all' ? true :
+     fFilter==='done' ? paidNos.has(c.no) :
+     fFilter==='late' ? s.behind>0 : !paidNos.has(c.no))
+    && (!q || c.name.toLowerCase().includes(q) || c.no.includes(q) || c.phone.replace(/-/g,'').includes(q.replace(/-/g,''))));
+  document.getElementById('fList').innerHTML = view.length? view.map(({c,s})=>{
+    const mine=rows.filter(r=>r.contract_no===c.no);
+    const got=mine.reduce((a,r)=>a+Number(r.amount),0);
+    const open=fOpen===c.no;
+    return `<div class="fcard ${mine.length?'done':''}">
+      <div class="top" data-open="${c.no}">
+        <div class="who"><b>${esc(c.name)}</b><small>${c.no} · ${c.phone}</small>
+          <div style="margin-top:5px">${pill(s.st)}${s.behindRounds?` <span class="fmini">ค้าง ${s.behindRounds} รอบ (${B(s.behind*c.daily)})</span>`:''}
+          ${mine.length?(()=>{
+            const need=Math.round(s.collectNext), lack=Math.max(0,need-got);
+            const wait=mine.some(r=>r.status==='pending')?' · รออนุมัติ':'';
+            return lack
+              ? `<div class="ok-mark" style="color:var(--warn)">เก็บได้ ${B(got)} / ${B(need)} · ขาด ${B(lack)}${wait}</div>`
+              : `<div class="ok-mark">เก็บครบ ${B(got)} บาท${wait}</div>`;
+          })():''}</div>
+        </div>
+        <div class="amt"><b>${B(s.collectNext)}</b><small>ต้องเก็บรอบนี้</small></div>
+      </div>
+      ${open?`<div class="fentry">
+        <div class="chips">
+          <button data-fill="${Math.round(s.collectNext)}">เต็มรอบ ${B(s.collectNext)}</button>
+          <button data-fill="${c.daily*7}">1 รอบ ${B(c.daily*7)}</button>
+          ${s.behind?`<button data-fill="${s.behind*c.daily}">ค้างเก่า ${B(s.behind*c.daily)}</button>`:''}
+          <button data-fill="${c.daily}">1 งวด ${B(c.daily)}</button>
+          <button data-fill="${Math.round(s.remain)}">ปิดสัญญา ${B(s.remain)}</button>
+        </div>
+        <div class="frow"><input type="number" id="fAmt-${c.no}" min="0" step="10" placeholder="ยอดที่รับมา (บาท)">
+          <button class="go" data-save="${c.no}">บันทึก</button></div>
+        <label style="font-size:11.5px">วันที่รับเงินจริง
+          <input type="date" id="fDay-${c.no}" value="${esc(fieldDate())}" min="${esc(c.start)}" max="${esc(iso(TODAY))}"></label>
+        <input id="fNote-${c.no}" placeholder="หมายเหตุ (ถ้ามี)">
+        <div class="chips"><span class="fmini" style="width:100%">เก็บไม่ได้ กดเลือกเหตุผล</span>
+          <button data-skip="${c.no}" data-reason="ไม่อยู่บ้าน">ไม่อยู่บ้าน</button>
+          <button data-skip="${c.no}" data-reason="ขอเลื่อน">ขอเลื่อน</button>
+          <button data-skip="${c.no}" data-reason="ยังไม่มีเงิน">ยังไม่มีเงิน</button>
+          <button data-skip="${c.no}" data-reason="ติดต่อไม่ได้">ติดต่อไม่ได้</button>
+        </div>
+        <div>
+          <div class="calhead"><span>รอบเก็บทุกเสาร์ · กดรอบที่เก็บได้</span>
+            <span>${Math.floor(s.instPaid)}/${c.days} งวด</span></div>
+          ${calHTML(c,true)}${CALLEG}
+        </div>
+        <div class="frow">
+          <button class="ghost" data-slip="${c.no}" style="flex:1;justify-content:center">สลิปส่งลูกค้า</button>
+          <button class="ghost" data-card="${c.no}" style="flex:1;justify-content:center">การ์ดผ่อน</button></div>
+        <div class="fmini">คงเหลือต้องเก็บทั้งสัญญา ${B(s.remain)} บาท${
+          got&&got<Math.round(s.collectNext)
+            ? ` · <b style="color:var(--warn)">รอบนี้ยังขาด ${B(Math.round(s.collectNext)-got)} บาท ยกไปรอบหน้าถ้าไม่เก็บเพิ่ม</b>`:''}</div>
+      </div>`:''}
+    </div>`}).join('') : `<p class="fmini">ไม่มีรายการในกลุ่มนี้</p>`;
+
+  document.querySelectorAll('#fList [data-open]').forEach(el=>el.onclick=()=>{
+    fOpen = fOpen===el.dataset.open?null:el.dataset.open; renderField(); });
+  document.querySelectorAll('#fList [data-fill]').forEach(b=>b.onclick=()=>{
+    document.getElementById('fAmt-'+fOpen).value=b.dataset.fill; });
+  document.querySelectorAll('#fList [data-save]').forEach(b=>b.onclick=()=>savePayment(b.dataset.save));
+  document.querySelectorAll('#fList [data-skip]').forEach(b=>b.onclick=()=>saveVisit(b.dataset.skip,b.dataset.reason));
+  document.querySelectorAll('#fList [data-card]').forEach(b=>b.onclick=ev=>{
+    ev.stopPropagation(); openCard(b.dataset.card); });
+  document.querySelectorAll('#fList [data-slip]').forEach(b=>b.onclick=ev=>{
+    ev.stopPropagation(); openSlip(b.dataset.slip); });
+  bindTicks();
+}
+function ftoast(msg,ok){
+  let el=document.getElementById('ftoast');
+  if(!el){el=document.createElement('div');el.id='ftoast';el.className='ftoast';document.body.appendChild(el)}
+  el.textContent=msg; el.style.background=ok?'var(--ink)':'var(--bad)'; el.style.color=ok?'var(--bg)':'#fff';
+  clearTimeout(el._t); el._t=setTimeout(()=>el.remove(),3200);
+}
+async function savePayment(no){
+  const c=contracts.find(x=>x.no===no), s=state(c);
+  const amt=Number(document.getElementById('fAmt-'+no).value)||0;
+  if(amt<=0){ ftoast('ใส่ยอดเงินที่รับมาก่อน',false); return }
+  const use=Math.min(amt,Math.round(s.remain));
+  const day=document.getElementById('fDay-'+no).value||fieldDate();
+  if(day>iso(TODAY)){ ftoast('เลือกวันที่ในอนาคตไม่ได้',false); return }
+  const res=await dbAdd('collections',{contract_no:no,customer:c.name,amount:use,
+    installments:Number((use/c.daily).toFixed(2)),
+    paid_at:day, round_date:fieldDate(), collector:collector(),
+    note:document.getElementById('fNote-'+no).value.trim(),status:'pending',
+    backdated:fieldDate()<lastRoundDate(),
+    created_at:new Date().toISOString()}, inbox);
+  if(res!==true){ ftoast('ส่งไม่สำเร็จ ลองอีกครั้ง',false); return }
+  fOpen=null;
+  ftoast('ส่งเข้าหลังบ้านแล้ว · '+c.name+' '+B(use)+' บาท · รอเจ้าของอนุมัติ',true);
+  renderAll();
+}
+async function saveVisit(no,reason){
+  const c=contracts.find(x=>x.no===no);
+  const res=await dbAdd('visits',{contract_no:no,customer:c.name,reason,
+    collector:collector(),at:new Date().toISOString()}, visits);
+  if(res!==true){ ftoast('ส่งไม่สำเร็จ ลองอีกครั้ง',false); return }
+  fOpen=null; ftoast('บันทึกไว้แล้ว · '+c.name+' '+reason,true); renderInbox(); renderField();
+}
+function closeSum(){
+  const rows=todayRows(), got=rows.reduce((a,r)=>a+Number(r.amount),0);
+  const fuel=Number(document.getElementById('clFuel').value)||0;
+  const other=Number(document.getElementById('clOther').value)||0;
+  document.getElementById('clDate').textContent=thDate(fieldDate());
+  document.getElementById('clWho').textContent=collector();
+  document.getElementById('clGot').textContent=B(got);
+  document.getElementById('clCount').textContent=rows.length+' ราย';
+  document.getElementById('clSum').innerHTML=`<div>หักค่าใช้จ่าย <b>${B(fuel+other)}</b></div>
+    <div>เงินสดนำส่งสุทธิ <b>${B(got-fuel-other)}</b></div>`;
+  return {rows,got,fuel,other};
+}
+document.getElementById('fClose').onclick=()=>{
+  if(!todayRows().length){ ftoast('รอบนี้ยังไม่มีรายการให้ปิดรอบ',false); return }
+  closeSum(); document.getElementById('closeSheet').hidden=false;
+};
+document.getElementById('clClose').onclick=()=>{document.getElementById('closeSheet').hidden=true};
+['clFuel','clOther'].forEach(id=>document.getElementById(id).oninput=closeSum);
+document.getElementById('clSend').onclick=async()=>{
+  const {rows,got,fuel,other}=closeSum();
+  const dt=fieldDate(), who=collector();
+  const otherItem=document.getElementById('clOtherItem').value.trim()||'ค่าใช้จ่ายอื่น';
+  const note=document.getElementById('clNote').value.trim();
+  if(fuel>0) await dbAdd('expenses',{date:dt,item:'ค่าน้ำมัน',amount:fuel,source:'เดินเก็บ',
+    collector:who,note,created_at:new Date().toISOString()}, dbExpenses);
+  if(other>0) await dbAdd('expenses',{date:dt,item:otherItem,amount:other,source:'เดินเก็บ',
+    collector:who,note,created_at:new Date().toISOString()}, dbExpenses);
+  const res=await dbAdd('handovers',{date:dt,collector:who,count:rows.length,total:got,
+    fuel,other,other_item:other>0?otherItem:'',net:got-fuel-other,note,
+    at:new Date().toISOString()}, handovers);
+  if(res!==true){ ftoast('ส่งไม่สำเร็จ ลองอีกครั้ง',false); return }
+  document.getElementById('closeSheet').hidden=true;
+  document.getElementById('clNote').value=''; document.getElementById('clOtherItem').value='';
+  document.getElementById('clOther').value='0';
+  ftoast('ปิดรอบแล้ว · นำส่ง '+B(got-fuel-other)+' บาท',true);
+  renderInbox();
+};
+document.getElementById('fSetup').onclick=()=>{
+  const b=document.getElementById('fSetupBox'); b.hidden=!b.hidden;
+};
+function setRound(dateStr){
+  document.getElementById('fDate').value=dateStr; fOpen=null; renderField();
+}
+document.getElementById('rPrev').onclick=()=>setRound(iso(addDays(d(fieldDate()),-7)));
+document.getElementById('rNext').onclick=()=>{
+  const nx=iso(addDays(d(fieldDate()),7));
+  setRound(nx>lastRoundDate()?lastRoundDate():nx);
+};
+document.getElementById('rNow').onclick=()=>setRound(lastRoundDate());
+document.getElementById('fSearch').oninput=e=>{fQuery=e.target.value;renderField()};
+document.getElementById('fName').oninput=renderField;
+document.getElementById('fDate').onchange=renderField;
+document.querySelectorAll('#fFilters button').forEach(b=>b.onclick=()=>{
+  fFilter=b.dataset.f;
+  document.querySelectorAll('#fFilters button').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));
+  renderField();
+});
+
+// ---------- รูปถ่ายประกอบ ----------
+let ASSETS, newPhotos={};
+async function assetStore(){ return SB ? SBSTORAGE : null }
+function shrink(file,max=1400){
+  return new Promise((res,rej)=>{
+    const u=URL.createObjectURL(file), img=new Image();
+    img.onload=()=>{
+      const k=Math.min(1,max/Math.max(img.width,img.height));
+      const cv=document.createElement('canvas');
+      cv.width=Math.round(img.width*k); cv.height=Math.round(img.height*k);
+      cv.getContext('2d').drawImage(img,0,0,cv.width,cv.height);
+      cv.toBlob(b=>{ URL.revokeObjectURL(u); b?res(b):rej(new Error('blob')) },'image/jpeg',.82);
+    };
+    img.onerror=()=>{ URL.revokeObjectURL(u); rej(new Error('load')) };
+    img.src=u;
+  });
+}
+let extraPhotos=[];
+function photoCount(){ return ['id','home','shop'].filter(k=>newPhotos[k]).length+extraPhotos.length }
+function renderExtra(){
+  const box=document.getElementById('moreBox');
+  box.innerHTML=extraPhotos.map((p,i)=>`<div class="shot has">
+    <img src="${esc(p.url||p.preview)}" alt="รูปเพิ่มเติม ${i+1}">
+    <button class="rm" data-rm="${i}" title="ลบรูปนี้">×</button>
+    <span>รูปที่ ${i+4}</span></div>`).join('');
+  box.querySelectorAll('[data-rm]').forEach(b=>b.onclick=()=>{
+    extraPhotos.splice(Number(b.dataset.rm),1); renderExtra();
+    document.getElementById('asHint').textContent='มีรูปแล้ว '+photoCount()+' รูป'; });
+}
+async function putPhoto(blob,hint){
+  const as=await assetStore();
+  if(!as){ hint.textContent='หน้านี้ยังเก็บรูปไม่ได้ · รูปจะแสดงเฉพาะในเครื่องนี้ ไม่ถูกส่งไปหลังบ้าน';
+    return {preview:URL.createObjectURL(blob),pending:true} }
+  try{ const r=await as.upload(blob); return {id:r.id,url:r.url} }
+  catch(e){ hint.textContent='อัปโหลดรูปไม่สำเร็จ ('+(e.code||'')+') ลองถ่ายใหม่'; return null }
+}
+document.querySelectorAll('[data-shot]').forEach(inp=>inp.onchange=async()=>{
+  const files=[...(inp.files||[])]; if(!files.length) return;
+  const key=inp.dataset.shot, hint=document.getElementById('asHint');
+  if(key==='more'){
+    const box=document.getElementById('shot-more'); box.classList.add('busy');
+    for(const f of files){
+      let blob; try{ blob=await shrink(f) }catch(e){ blob=f }
+      const p=await putPhoto(blob,hint);
+      if(p){ extraPhotos.push(p); renderExtra() }
+    }
+    box.classList.remove('busy'); inp.value='';
+    if(photoCount()) hint.textContent='มีรูปแล้ว '+photoCount()+' รูป';
+    return;
+  }
+  const box=document.getElementById('shot-'+key);
+  let blob; try{ blob=await shrink(files[0]) }catch(e){ blob=files[0] }
+  box.querySelectorAll('img').forEach(n=>n.remove());
+  const img=document.createElement('img'); img.alt=SHOTS[key];
+  img.src=URL.createObjectURL(blob); box.prepend(img);
+  box.classList.add('has','busy');
+  const p=await putPhoto(blob,hint);
+  if(p){ newPhotos[key]=p; if(p.url) hint.textContent='มีรูปแล้ว '+photoCount()+' รูป'; }
+  else { newPhotos[key]=null; box.classList.remove('has') }
+  box.classList.remove('busy');
+});
+
+// ---------- เปิดลูกค้าใหม่ (หน้าบ้าน) ----------
+function fillAppAmounts(){
+  const plan=document.getElementById('asPlan').value, sel=document.getElementById('asAmt'), keep=sel.value;
+  const base=plan==='custom'?'60 วัน':plan;
+  sel.innerHTML=RATES.filter(r=>r.plan===base).map(r=>`<option value="${r.amount}">${B(r.amount)} บาท</option>`).join('')
+    +'<option value="custom">กำหนดเอง</option>';
+  if(keep&&[...sel.options].some(o=>o.value===keep)) sel.value=keep;
+  suggestInterest(); appPreview();
+}
+function asVals(){
+  const custom=document.getElementById('asPlan').value==='custom';
+  const sel=document.getElementById('asAmt').value;
+  const amt=sel==='custom'?Number(document.getElementById('asAmtCustom').value)||0:Number(sel)||0;
+  return {custom, amt,
+    plan: custom?'กำหนดเอง':document.getElementById('asPlan').value,
+    days: custom?Number(document.getElementById('asDays').value)||0:0,
+    interest: custom?Number(document.getElementById('asInt').value)||0:0};
+}
+function suggestInterest(){
+  const v=asVals(); if(!v.custom||!v.days||!v.amt) return;
+  document.getElementById('asInt').value=Math.round(v.amt*0.0033*v.days/50)*50;   // เทียบเรท 60 วัน 20%
+}
+function appPreview(){
+  const v=asVals();
+  document.getElementById('asAmtC').hidden = document.getElementById('asAmt').value!=='custom';
+  document.getElementById('asDaysC').hidden = !v.custom;
+  document.getElementById('asIntC').hidden = !v.custom;
+  const r=rateFor(v.amt,v.plan,v.days,v.interest), start=d(document.getElementById('asStart').value||thisRoundDate());
+  const nr=Math.ceil(r.days/7), first=satFrom(addDays(start,1));
+  const up=upfrontOf(document.getElementById('asUpf').value,r.daily);
+  document.getElementById('asCalc').innerHTML=`<div>ผ่อนวันละ <b>${B(r.daily)}</b></div>
+    <div>เก็บทุกเสาร์ <b>${B(r.daily*7)}</b></div>
+    <div>จำนวนรอบ <b>${nr}</b> (${r.days} วัน)</div>
+    <div>ดอกเบี้ยรวม <b>${B(r.interest)}</b></div>
+    <div>ต้องเก็บรวม <b>${B(v.amt+r.interest)}</b></div>
+    <div style="background:var(--accent-soft);color:var(--accent)">หักงวดแรก <b>${B(up)}</b></div>
+    <div style="background:var(--accent);color:#fff">จ่ายให้ลูกค้าจริง <b>${B(v.amt-up)}</b></div>
+    <div>รอบแรก <b>${thDate(first)}</b></div>`;
+}
+['asPlan','asAmt','asStart','asAmtCustom'].forEach(id=>document.getElementById(id).onchange=
+  id==='asPlan'?fillAppAmounts:appPreview);
+document.getElementById('asDays').oninput=()=>{suggestInterest();appPreview()};
+document.getElementById('asInt').oninput=appPreview;
+document.getElementById('asAmtCustom').oninput=()=>{suggestInterest();appPreview()};
+function lookupOld(){
+  const box=document.getElementById('asOld');
+  const phone=document.getElementById('asPhone').value;
+  if(String(phone).replace(/\D/g,'').length<9){ box.hidden=true; return }
+  const h=custStats(custKey({phone}),null);
+  if(!h.list.length){ box.hidden=true; return }
+  const prev=h.rows[0].c;
+  box.hidden=false;
+  box.innerHTML=`<div class="app" style="margin:0">
+    <div class="hd"><b>ลูกค้าเก่า · ${esc(prev.name)}</b><span class="pill ${h.cls}">${h.grade}</span></div>
+    <div class="meta"><span>เคยกู้ ${h.list.length} สัญญา · ปิดครบ ${h.closed}</span>
+      <span>สัญญาล่าสุด ${esc(prev.no)} · ${B(prev.amount)} บาท</span></div>
+    <div class="acts"><button class="ghost" id="asUseOld">ใช้ข้อมูลเดิม (ชื่อ + รูป)</button></div></div>`;
+  document.getElementById('asUseOld').onclick=()=>{
+    document.getElementById('asName').value=prev.name;
+    const ph=prev.photos||{};
+    ['id','home','shop'].forEach(k=>{ if(ph[k]&&ph[k].url) newPhotos[k]=ph[k] });
+    extraPhotos=(ph.extra||[]).filter(p=>p&&p.url).slice(); renderExtra();
+    ['id','home','shop'].forEach(k=>{
+      const el=document.getElementById('shot-'+k); if(!el||!newPhotos[k]) return;
+      el.querySelectorAll('img').forEach(n=>n.remove());
+      const img=document.createElement('img'); img.alt=SHOTS[k]; img.src=newPhotos[k].url;
+      el.prepend(img); el.classList.add('has');
+    });
+    document.getElementById('asHint').textContent='ดึงข้อมูลจากสัญญา '+prev.no+' มาแล้ว · ถ่ายรูปใหม่ทับได้ถ้าย้ายบ้านหรือเปลี่ยนร้าน';
+  };
+}
+document.getElementById('asPhone').oninput=lookupOld;
+document.getElementById('asUpf').innerHTML=upfrontOptions();
+document.getElementById('asUpf').onchange=appPreview;
+document.getElementById('fNew').onclick=()=>{
+  document.getElementById('asStart').value=thisRoundDate();
+  fillAppAmounts(); document.getElementById('newSheet').hidden=false;
+};
+document.getElementById('nsClose').onclick=()=>{document.getElementById('newSheet').hidden=true};
+document.getElementById('asSend').onclick=async()=>{
+  const name=document.getElementById('asName').value.trim();
+  const hint=document.getElementById('asHint');
+  if(!name){ hint.textContent='ใส่ชื่อลูกค้าก่อน'; return }
+  if(!newPhotos.id||!newPhotos.home){ hint.textContent='ต้องมีรูปบัตรประชาชนและรูปบ้าน (รูปร้านไม่บังคับ)'; return }
+  const v=asVals();
+  if(!v.amt||(v.custom&&!v.days)){ hint.textContent='ใส่ยอดกู้และจำนวนวันให้ครบก่อน'; return }
+  const rec={name,phone:document.getElementById('asPhone').value.trim(),
+    plan:v.plan, amount:v.amt, days:v.days||null, interest:v.custom?v.interest:null,
+    start:document.getElementById('asStart').value||thisRoundDate(),
+    upfront_mode:document.getElementById('asUpf').value,
+    note:document.getElementById('asNote').value.trim(),
+    photos:{...newPhotos,extra:extraPhotos.slice()},
+    collector:collector(),status:'pending',created_at:new Date().toISOString()};
+  const res=await dbAdd('applications',rec,apps);
+  if(res!==true){ hint.textContent='ส่งไม่สำเร็จ ลองอีกครั้ง'; return }
+  newPhotos={}; extraPhotos=[]; renderExtra();
+  document.getElementById('asOld').hidden=true;
+  document.getElementById('asName').value=''; document.getElementById('asPhone').value='';
+  document.getElementById('asNote').value='';
+  document.querySelectorAll('.shots .shot').forEach(b=>{
+    if(b.id!=='shot-more'){b.classList.remove('has');b.querySelectorAll('img').forEach(n=>n.remove())}});
+  document.querySelectorAll('[data-shot]').forEach(i=>i.value='');
+  hint.textContent='เจ้าของอนุมัติที่หลังบ้านแล้วสัญญาจะเริ่มนับรอบเก็บเงินทันที';
+  document.getElementById('newSheet').hidden=true;
+  ftoast('ส่งคำขอเปิดลูกค้าใหม่แล้ว · '+name,true);
+  renderInbox();
+};
+
+// ---------- สลับหน้าบ้าน / หลังบ้าน ----------
+const ADMIN_PIN='2569';
+function showField(){
+  document.getElementById('app-admin').hidden=true;
+  document.getElementById('app-field').hidden=false;
+  window.scrollTo({top:0}); renderField();
+}
+function showAdmin(){
+  document.getElementById('app-field').hidden=true;
+  document.getElementById('app-admin').hidden=false;
+  window.scrollTo({top:0}); renderDash(); renderCust(); renderInbox();
+}
+document.getElementById('toField').onclick=showField;
+document.getElementById('toAdmin').onclick=()=>{
+  let ok=false; try{ ok=sessionStorage.getItem('adm')==='1' }catch(e){}
+  if(ok) return showAdmin();
+  document.getElementById('pinInput').value='';
+  document.getElementById('pinMsg').textContent='หน้าหลังบ้านมีกำไรและปันผล คนเดินเก็บไม่ควรเข้าถึง';
+  document.getElementById('pinSheet').hidden=false;
+  document.getElementById('pinInput').focus();
+};
+document.getElementById('pinClose').onclick=()=>{document.getElementById('pinSheet').hidden=true};
+document.getElementById('pinGo').onclick=()=>{
+  if(document.getElementById('pinInput').value.trim()!==ADMIN_PIN){
+    document.getElementById('pinMsg').textContent='รหัสไม่ถูกต้อง'; return }
+  try{ sessionStorage.setItem('adm','1') }catch(e){}
+  document.getElementById('pinSheet').hidden=true; showAdmin();
+};
+document.getElementById('pinInput').onkeydown=e=>{ if(e.key==='Enter') document.getElementById('pinGo').click() };
+
+// ---------- nav ----------
+const VIEWS=['dash','cust','inbox','collect','loan','expense','rate','profit','users','schema'];
+document.querySelectorAll('.nav button[data-view]').forEach(b=>b.onclick=()=>{
+  VIEWS.forEach(v=>document.getElementById('v-'+v).hidden = v!==b.dataset.view);
+  document.querySelectorAll('.nav button[data-view]').forEach(x=>x.setAttribute('aria-current',String(x===b)));
+  window.scrollTo({top:0,behavior:'smooth'});
+});
+
+function renderAll(){
+  renderDash(); renderCust(); renderInbox(); fillCollectSel(); collectPreview(); renderLedger();
+  loanPreview(); renderExp(); renderRate(); renderProfit(); renderField();
+  if(csNo && !document.getElementById('cardSheet').hidden) openCard(csNo);
+  if(slipNo && !document.getElementById('slipSheet').hidden) openSlip(slipNo);
+}
+['cDate','eDate','nStart'].forEach(id=>document.getElementById(id).value=iso(TODAY));
+document.getElementById('fDate').value=lastRoundDate();
+try{ const n=localStorage.getItem('collector'); if(n) document.getElementById('fName').value=n; }catch(e){}
+fillLoanAmounts();
+renderAll();
+startAuth();
+</script>
+
+</body>
+</html>
