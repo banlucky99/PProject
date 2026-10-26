@@ -11,7 +11,6 @@ img{max-width:100%}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
-/* ===== ตั้งค่า Supabase: แก้ 2 บรรทัดนี้ให้เป็นของโปรเจกต์คุณ ===== */
 const SUPABASE_URL  = 'hhttps://jfcbulebyzunsncvruya.supabase.co';
 const SUPABASE_KEY  = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpmY2J1bGVieXp1bnNuY3ZydXlhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA5MTI4MTAsImV4cCI6MjEwNjQ4ODgxMH0.vNVBQqdgzm2COiihdYhAu3iBgxBykk8dnS15i8OEuyY';
 /* true = โหมดเดโม มีลูกค้าตัวอย่าง 12 ราย / false = เริ่มจากศูนย์ตอนใช้จริง */
@@ -95,8 +94,8 @@ function authGateHTML(mode){
       <button id="auTabUp" aria-pressed="${up}">สมัครสมาชิก</button>
     </div>
     <label>ชื่อผู้ใช้ (username)<input id="auUser" autocomplete="username"
-      inputmode="text" placeholder="เช่น piak"></label>
-    ${up ? '<label>ชื่อที่แสดง<input id="auName" placeholder="เช่น เปี๊ยก"></label>' : ''}
+      inputmode="text" placeholder="ภาษาอังกฤษหรือตัวเลข 3 ตัวขึ้นไป"></label>
+    ${up ? '<label>ชื่อที่แสดง<input id="auName" placeholder="ชื่อที่ให้คนอื่นเห็นในระบบ"></label>' : ''}
     <label>รหัสผ่าน<input id="auPass" type="password"
       autocomplete="${up ? 'new-password' : 'current-password'}"></label>
     <button class="go" id="auGo">${up ? 'สมัครสมาชิก' : 'เข้าสู่ระบบ'}</button>
@@ -934,7 +933,7 @@ button.ghost:hover{background:var(--surface-2)}
   <button class="go" id="fNew" style="display:block;width:100%;margin-bottom:12px">+ เปิดลูกค้าใหม่</button>
 
   <div class="form" id="fSetupBox" hidden style="margin-bottom:14px">
-    <label>ชื่อผู้เก็บเงิน<input id="fName" placeholder="เช่น เปี๊ยก"></label>
+    <label>ชื่อผู้เก็บเงิน<input id="fName" placeholder="ชื่อที่ใช้แสดงในระบบ"></label>
   </div>
 
   <input id="fSearch" placeholder="ค้นหาชื่อ เบอร์โทร หรือเลขที่สัญญา" style="margin-bottom:10px">
