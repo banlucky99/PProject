@@ -340,13 +340,14 @@ main{flex:1;min-width:0;padding-block:22px 48px;
 /* tiles */
 .tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:22px;grid-auto-rows:1fr}
 .tiles.four{grid-template-columns:repeat(4,1fr)}
+.tiles.three{grid-template-columns:repeat(3,1fr)}
 .tile{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:13px 14px;
   display:flex;flex-direction:column;justify-content:space-between;gap:4px;min-width:0;min-height:104px}
 .tile .k{font-size:12.5px;color:var(--muted);line-height:1.35}
 .tile .v{font-family:var(--font-d);font-size:23px;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-.02em;line-height:1.15}
 .tile .s{font-size:12px;color:var(--muted);line-height:1.35;min-height:16px}
-@media (max-width:900px){.tiles,.tiles.four{grid-template-columns:repeat(2,1fr)}}
-@media (max-width:460px){.tiles,.tiles.four{grid-template-columns:1fr}}
+@media (max-width:900px){.tiles,.tiles.four,.tiles.three{grid-template-columns:repeat(2,1fr)}}
+@media (max-width:460px){.tiles,.tiles.four,.tiles.three{grid-template-columns:1fr}}
 .tile.hero{background:var(--accent);border-color:var(--accent);color:#fff}
 .tile.hero .k,.tile.hero .s{color:rgba(255,255,255,.82)}
 
@@ -691,6 +692,7 @@ button.ghost:hover{background:var(--surface-2)}
     <button data-view="collect"><i class="dot"></i>เก็บเงิน</button>
     <button data-view="loan"><i class="dot"></i>อนุมัติลูกค้าใหม่<b id="navApp" class="navbadge" hidden></b></button>
     <button data-view="expense"><i class="dot"></i>ค่าใช้จ่าย</button>
+    <button data-view="money"><i class="dot"></i>กระทบยอดเงิน</button>
     <button data-view="rate"><i class="dot"></i>เรทผ่อน</button>
     <button data-view="profit"><i class="dot"></i>กำไร &amp; ปันผล</button>
     <button data-view="users" hidden><i class="dot"></i>ผู้ใช้งาน<b id="navUser" class="navbadge" hidden></b></button>
@@ -873,6 +875,37 @@ button.ghost:hover{background:var(--surface-2)}
           <div class="split" id="calcOut"></div>
           <p class="note">ยอดที่ไม่มีในตารางเรท ระบบเทียบสัดส่วนจากเรทที่ใกล้ที่สุดให้</p>
         </div>
+      </div>
+    </section>
+
+    <!-- กระทบยอดเงิน -->
+    <section id="v-money" hidden>
+      <div class="head"><div><h1>กระทบยอดเงิน</h1>
+        <p>แจกแจงเงินทุกบาทที่เข้าและออก เพื่อหาว่าเงินจริงกับเงินในระบบต่างกันตรงไหน</p></div></div>
+      <div class="tiles three" id="moneyTiles"></div>
+      <div class="card">
+        <header><h2>สมการเงินสด</h2><span class="hint">แก้เงินทุนตั้งต้นได้ถ้าตัวเลขไม่ตรงของจริง</span></header>
+        <div class="body">
+          <div class="form">
+            <label>เงินทุนตั้งต้น (บาท)<input type="number" id="mCap" step="1000" min="0"></label>
+            <label>เงินสดจริงที่นับได้ (บาท)<input type="number" id="mReal" step="100" min="0"
+              placeholder="ใส่ยอดที่นับได้จริง"></label>
+          </div>
+          <div class="split" id="mEq"></div>
+          <p class="note" id="mDiff"></p>
+        </div>
+      </div>
+      <div class="card">
+        <header><h2>เงินออก · ปล่อยกู้</h2><span class="hint" id="mOutHint"></span></header>
+        <div class="scroll"><table id="mOutTable"></table></div>
+      </div>
+      <div class="card">
+        <header><h2>เงินเข้า · เก็บได้</h2><span class="hint" id="mInHint"></span></header>
+        <div class="scroll"><table id="mInTable"></table></div>
+      </div>
+      <div class="card">
+        <header><h2>เงินออก · ค่าใช้จ่าย</h2><span class="hint" id="mExpHint"></span></header>
+        <div class="scroll"><table id="mExpTable"></table></div>
       </div>
     </section>
 
@@ -1098,7 +1131,8 @@ button.ghost:hover{background:var(--surface-2)}
 // ---------- ข้อมูลตั้งต้น (จาก Excel) ----------
 const NOW = new Date();
 const TODAY = new Date(NOW.getFullYear(),NOW.getMonth(),NOW.getDate());
-const CAPITAL = 200000;
+let CAPITAL = 200000;                       // แก้ได้ที่หน้ากระทบยอดเงิน · จำไว้ในเครื่องนี้
+try{ const v=localStorage.getItem('capital'); if(v!==null&&v!=='') CAPITAL=Number(v)||0 }catch(e){}
 const RATES = [
   {plan:'28 วัน',amount:5000, daily:200,days:28,interest:600},
   {plan:'28 วัน',amount:10000,daily:400,days:28,interest:1200},
@@ -1172,6 +1206,10 @@ const SEED = [
     {no:'25690021',start:'2026-10-25',amount:5000,days:60,pays:[['2026-10-25',600]]}]},
   {id:'0020',name:'ชุติกาญจน์ ธิคำลอง',phone:'061-186-3636',contracts:[
     {no:'25690022',start:'2026-10-25',amount:5000,days:60,pays:[['2026-10-25',600]]}]},
+  {id:'0021',name:'มนตรี ต้นกันยา',phone:'092-857-4330',contracts:[
+    {no:'25690024',start:'2026-10-28',amount:5000,days:28,pays:[['2026-10-28',600]]}]},
+  {id:'0022',name:'ณิชาภา มีโพธิ์',phone:'062-541-5415',contracts:[
+    {no:'25690025',start:'2026-10-29',amount:5000,days:28,pays:[['2026-10-29',400]]}]},
 ];
 const EXP_SEED = [
   {date:'2026-09-26',item:'ค่าน้ำมัน',amount:500,source:'เดินเก็บ'},
@@ -1319,14 +1357,26 @@ async function initDB(){
   DB.collection('handovers').onSnapshot(s=>{
     handovers = s.docs.map(x=>({id:x.id,...x.data()})); renderInbox(); }, ()=>{});
 }
+// เก็บข้อความ error ล่าสุดจากฐานข้อมูล เพื่อบอกสาเหตุจริงแทนคำว่า "ไม่สำเร็จ" เฉย ๆ
+let lastDbError='';
+function dbErrText(e){
+  const m=String((e&&(e.message||e.msg||e.details||e.code))||e||'');
+  if(/column .* does not exist|PGRST204|schema cache/i.test(m))
+    return 'ฐานข้อมูลยังไม่มีคอลัมน์ที่เวอร์ชันนี้ใช้ · รันไฟล์ SQL อัปเดตโครงสร้างก่อน';
+  if(/row-level security|violates row-level|42501/i.test(m))
+    return 'สิทธิ์ไม่พอ · บัญชีนี้ต้องเป็นระดับเจ้าของถึงจะเปิดสัญญาได้';
+  if(/duplicate key|23505/i.test(m)) return 'เลขที่สัญญานี้มีอยู่แล้ว · รีเฟรชหน้าแล้วลองใหม่';
+  if(/Failed to fetch|NetworkError/i.test(m)) return 'ต่อฐานข้อมูลไม่ได้ · เช็กอินเทอร์เน็ตแล้วลองใหม่';
+  return m.slice(0,160);
+}
 async function createContract(o){
   const r=rateFor(Number(o.amount),o.plan,o.days,o.interest), no=nextContractNo();
   const mode=o.upfront_mode||UPFRONT_DEFAULT, up=upfrontOf(mode,r.daily,r.days,o.start,o.upfront_amt);
   const c={id:custIdFor(o),name:o.name,phone:o.phone||'—',no,plan:r.plan,amount:Number(o.amount),
     daily:r.daily,days:r.days,interest:r.interest,total:Number(o.amount)+r.interest,
     start:o.start,end:iso(addDays(d(o.start),r.days-1)),note:o.note||'',photos:o.photos||{},
-    upfront_mode:mode, upfront:up, upfront_amt:mode==='custom'?up:0};
-  if(dbOn){ try{ await DB.doc('contracts/'+no).set(c) }catch(e){ return null } }
+    upfront_mode:mode, upfront:up};
+  if(dbOn){ try{ await DB.doc('contracts/'+no).set(c) }catch(e){ lastDbError=dbErrText(e); return null } }
   else { dbContracts.push(c); rebuildContracts(); rebuildPayments(); renderAll() }
   if(up>0){
     await dbAdd('collections',{contract_no:no,customer:c.name,amount:up,
@@ -1786,7 +1836,7 @@ document.getElementById('nSave').onclick=async()=>{
     upfront_mode:document.getElementById('nUpf').value,
     upfront_amt:Number(document.getElementById('nUpfAmt').value)||0,
     start:document.getElementById('nStart').value||iso(TODAY)});
-  if(!c){t.hidden=false;t.style.color='var(--bad)';t.textContent='เปิดสัญญาไม่สำเร็จ ลองอีกครั้ง';return}
+  if(!c){t.hidden=false;t.style.color='var(--bad)';t.textContent='เปิดสัญญาไม่สำเร็จ · '+(lastDbError||'ลองอีกครั้ง');return}
   document.getElementById('nName').value='';document.getElementById('nPhone').value='';
   t.hidden=false;t.style.color='var(--ok)';
   t.textContent=`เปิดสัญญา ${c.no} ให้ ${name} แล้ว · เก็บเสาร์ละ ${B(c.daily*7)} บาท`;
@@ -2072,7 +2122,7 @@ async function decideApp(id,ok){
       o.upfront_mode=v.upfront_mode; o.upfront_amt=v.upfront_amt;
     }
     const c=await createContract(o);
-    if(!c){ syncLabel('เปิดสัญญาไม่สำเร็จ',false); return }
+    if(!c){ syncLabel('เปิดสัญญาไม่สำเร็จ · '+(lastDbError||'ลองอีกครั้ง'),false); return }
     a.contract_no=c.no;
   }
   const patch={status:ok?'approved':'rejected',decided_at:new Date().toISOString(),
@@ -2206,8 +2256,8 @@ function openSlip(no){
       <div class="g4">
         <div><span>ยอดกู้</span><b>${B(c.amount)}</b></div>
         <div><span>ผ่อนวันละ</span><b>${B(c.daily)}</b></div>
-        <div><span>เก็บทุกเสาร์</span><b>${B(c.daily*7)}</b></div>
-        <div><span>งวดทั้งหมด</span><b>${c.days}</b></div>
+        <div><span>งวดละ</span><b>${B(c.daily*7)}</b></div>
+        <div><span>จำนวนวัน</span><b>${c.days}</b></div>
       </div>
       <div class="period"><span>${thDate(c.start)} ถึง ${thDate(c.end)}</span>
         <em>${s.st==='closed'?'ปิดสัญญาแล้ว':'เหลืออีก '+daysLeft+' วัน'}</em></div>
@@ -2836,14 +2886,120 @@ document.getElementById('pinGo').onclick=()=>{
 document.getElementById('pinInput').onkeydown=e=>{ if(e.key==='Enter') document.getElementById('pinGo').click() };
 
 // ---------- nav ----------
-const VIEWS=['dash','cust','inbox','collect','loan','expense','rate','profit','users','schema'];
+const VIEWS=['dash','cust','inbox','collect','loan','money','rate','expense','profit','users','schema'];
 document.querySelectorAll('.nav button[data-view]').forEach(b=>b.onclick=()=>{
   VIEWS.forEach(v=>document.getElementById('v-'+v).hidden = v!==b.dataset.view);
   document.querySelectorAll('.nav button[data-view]').forEach(x=>x.setAttribute('aria-current',String(x===b)));
   window.scrollTo({top:0,behavior:'smooth'});
 });
 
+// ---------- กระทบยอดเงิน ----------
+function moneyRows(){
+  const out=[], inn=[];
+  contracts.forEach(c=>{
+    if(state(c).st==='pending') return;                // ยังไม่ถึงวันเริ่ม เงินยังไม่ออก
+    out.push({date:c.start,no:c.no,name:c.name,amount:c.amount,upfront:Number(c.upfront)||0});
+  });
+  const live=new Set(contracts.filter(c=>state(c).st!=='pending').map(c=>c.no));
+  const byDate={};
+  payments.filter(p=>live.has(p.no)).forEach(p=>{
+    (byDate[p.date]=byDate[p.date]||{date:p.date,amount:0,n:0,upfront:0});
+    byDate[p.date].amount+=p.amount; byDate[p.date].n++;
+    const c=contracts.find(x=>x.no===p.no);
+    if(c && c.start===p.date && Math.abs(p.amount-(Number(c.upfront)||0))<0.5) byDate[p.date].upfront+=p.amount;
+  });
+  Object.values(byDate).forEach(r=>inn.push(r));
+  out.sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+  inn.sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+  return {out,inn};
+}
+function renderMoney(){
+  if(!document.getElementById('mEq')) return;
+  const t=totals(), {out,inn}=moneyRows();
+  const outCash=out.reduce((a,r)=>a+r.amount,0);              // ยอดกู้เต็มที่ลงบัญชีเป็นเงินออก
+  const inCash=inn.reduce((a,r)=>a+r.amount,0);
+  const upAll=out.reduce((a,r)=>a+r.upfront,0);
+  const cap=document.getElementById('mCap');
+  if(document.activeElement!==cap) cap.value=CAPITAL;
+  let real=''; try{ real=localStorage.getItem('cashReal')||'' }catch(e){}
+  const rl=document.getElementById('mReal');
+  if(document.activeElement!==rl) rl.value=real;
+  const diff = real==='' ? null : Math.round(Number(real)||0)-Math.round(t.cash);
+
+  document.getElementById('moneyTiles').innerHTML=`
+    <div class="tile hero"><div class="k">เงินสดตามระบบ</div><div class="v">${B(t.cash)}</div>
+      <div class="s">หักค่าใช้จ่ายแล้ว</div></div>
+    <div class="tile"><div class="k">เงินสดจริงที่นับได้</div>
+      <div class="v">${real===''?'—':B(Number(real))}</div>
+      <div class="s">${real===''?'ใส่ยอดด้านล่างเพื่อเทียบ':'ยอดที่นับเอง'}</div></div>
+    <div class="tile"><div class="k">ผลต่าง</div>
+      <div class="v" style="color:${diff===null?'inherit':diff===0?'var(--ok)':'var(--bad)'}">
+        ${diff===null?'—':(diff>0?'+':'')+B(diff)}</div>
+      <div class="s">${diff===null?'รอใส่เงินสดจริง':diff===0?'ตรงกันพอดี'
+        :diff>0?'เงินจริงมากกว่าระบบ':'เงินจริงน้อยกว่าระบบ'}</div></div>`;
+
+  document.getElementById('mEq').innerHTML=`
+    <div>เงินทุนตั้งต้น <b>${B(CAPITAL)}</b></div>
+    <div style="color:var(--bad)">− ปล่อยกู้ออก <b>${B(outCash)}</b></div>
+    <div style="color:var(--ok)">+ เก็บเข้าทั้งหมด <b>${B(inCash)}</b></div>
+    <div style="color:var(--bad)">− ค่าใช้จ่าย <b>${B(t.exp)}</b></div>
+    <div style="background:var(--accent);color:#fff">= เงินสดตามระบบ <b>${B(t.cash)}</b></div>`;
+
+  const md=document.getElementById('mDiff');
+  if(diff===null){ md.style.color='var(--muted)';
+    md.textContent='ใส่เงินสดจริงที่นับได้ ระบบจะเทียบให้ว่าต่างกันเท่าไหร่'; }
+  else if(diff===0){ md.style.color='var(--ok)'; md.textContent='เงินจริงตรงกับระบบพอดี'; }
+  else { md.style.color='var(--bad)';
+    md.innerHTML=`ต่างกัน <b>${B(Math.abs(diff))}</b> บาท (เงินจริง${diff>0?'มากกว่า':'น้อยกว่า'}ระบบ) · `+
+      (diff>0
+        ? 'มักเกิดจาก ยังไม่ได้บันทึกยอดที่เก็บมา หรือเงินทุนตั้งต้นใส่ไว้น้อยกว่าจริง'
+        : 'มักเกิดจาก ยังไม่ได้ลงค่าใช้จ่าย เงินที่ปล่อยจริงมากกว่าที่บันทึก หรือเงินทุนตั้งต้นใส่ไว้มากกว่าจริง');}
+
+  document.getElementById('mOutHint').textContent=
+    `${out.length} สัญญา · หักงวดแรกไปแล้ว ${B(upAll)} จึงจ่ายสดจริง ${B(outCash-upAll)}`;
+  document.getElementById('mOutTable').innerHTML=
+    `<thead><tr><th>วันเปิด</th><th>สัญญา</th><th>ลูกค้า</th><th class="r">ยอดกู้</th>
+      <th class="r">หักงวดแรก</th><th class="r">จ่ายสดจริง</th></tr></thead><tbody>`+
+    out.map(r=>`<tr><td>${thDate(r.date)}</td><td>${esc(r.no)}</td><td>${esc(r.name)}</td>
+      <td class="r">${B(r.amount)}</td><td class="r">${r.upfront?B(r.upfront):'—'}</td>
+      <td class="r"><b>${B(r.amount-r.upfront)}</b></td></tr>`).join('')+
+    `</tbody><tfoot><tr><td colspan="3">รวม</td><td class="r">${B(outCash)}</td>
+      <td class="r">${B(upAll)}</td><td class="r"><b>${B(outCash-upAll)}</b></td></tr></tfoot>`;
+
+  document.getElementById('mInHint').textContent=
+    `${inn.length} รอบ · รวม ${B(inCash)} (ในนี้เป็นงวดแรกที่หักตอนปล่อย ${B(upAll)})`;
+  document.getElementById('mInTable').innerHTML=
+    `<thead><tr><th>รอบที่ปิดยอด</th><th class="r">จำนวนรายการ</th>
+      <th class="r">หักตอนปล่อยเงิน</th><th class="r">เก็บจากมือลูกค้า</th><th class="r">รวมเข้า</th></tr></thead><tbody>`+
+    inn.map(r=>`<tr><td>${thDate(r.date)}</td><td class="r">${r.n}</td>
+      <td class="r">${r.upfront?B(r.upfront):'—'}</td><td class="r">${B(r.amount-r.upfront)}</td>
+      <td class="r"><b>${B(r.amount)}</b></td></tr>`).join('')+
+    `</tbody><tfoot><tr><td>รวม</td><td class="r">${inn.reduce((a,r)=>a+r.n,0)}</td>
+      <td class="r">${B(upAll)}</td><td class="r">${B(inCash-upAll)}</td>
+      <td class="r"><b>${B(inCash)}</b></td></tr></tfoot>`;
+
+  const ex=expenses.slice().sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+  document.getElementById('mExpHint').textContent=`${ex.length} รายการ · รวม ${B(t.exp)}`;
+  document.getElementById('mExpTable').innerHTML=
+    `<thead><tr><th>วันที่</th><th>รายการ</th><th>ที่มา</th><th class="r">ยอดเงิน</th></tr></thead><tbody>`+
+    (ex.length?ex.map(e=>`<tr><td>${thDate(e.date)}</td><td>${esc(e.item)}</td>
+      <td>${esc(e.source||'หลังบ้าน')}${e.collector?' · '+esc(e.collector):''}</td>
+      <td class="r">${B(e.amount)}</td></tr>`).join('')
+     :'<tr><td colspan="4">ยังไม่มีค่าใช้จ่าย</td></tr>')+
+    `</tbody><tfoot><tr><td colspan="3">รวม</td><td class="r"><b>${B(t.exp)}</b></td></tr></tfoot>`;
+}
+document.getElementById('mCap').oninput=e=>{
+  CAPITAL=Math.max(0,Math.round(Number(e.target.value)||0));
+  try{ localStorage.setItem('capital',CAPITAL) }catch(x){}
+  renderAll();
+};
+document.getElementById('mReal').oninput=e=>{
+  try{ localStorage.setItem('cashReal',e.target.value) }catch(x){}
+  renderMoney();
+};
+
 function renderAll(){
+  renderMoney();
   renderDash(); renderCust(); renderInbox(); fillCollectSel(); collectPreview(); renderLedger();
   loanPreview(); renderExp(); renderRate(); renderProfit(); renderField();
   if(csNo && !document.getElementById('cardSheet').hidden) openCard(csNo);
