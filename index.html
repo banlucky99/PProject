@@ -55,12 +55,21 @@ function authErr(e){
 
 /* ---- อะแดปเตอร์: ให้โค้ดแอปเรียกใช้เหมือนเดิมทุกบรรทัด ---- */
 const PK = {contracts:'no'};
+const LOADED = {};          // กี่แถวที่อ่านมาได้จากแต่ละตาราง · ใช้โชว์ในหน้ากระทบยอดเงิน
 function sbSnap(table, cb){
   const key = PK[table] || 'id';
   const load = async () => {
     const {data,error} = await SB.from(table).select('*');
-    if(error){ console.warn(table, error.message); return }
+    if(error){
+      console.warn(table, error.message);
+      LOADED[table] = 'error: ' + error.message;
+      syncLabel('อ่านตาราง ' + table + ' ไม่ได้ · ' + error.message, false);
+      if(typeof renderMoney==='function') renderMoney();
+      return;
+    }
+    LOADED[table] = (data||[]).length;
     cb({docs:(data||[]).map(row=>({id:row[key], data:()=>row}))});
+    if(typeof renderMoney==='function') renderMoney();
   };
   load();
   try{
@@ -341,6 +350,8 @@ main{flex:1;min-width:0;padding-block:22px 48px;
 .tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:22px;grid-auto-rows:1fr}
 .tiles.four{grid-template-columns:repeat(4,1fr)}
 .tiles.three{grid-template-columns:repeat(3,1fr)}
+tr.drow>td{padding:0 0 12px;background:transparent}
+tr.drow #custDetailCard{margin:0;border-color:var(--accent);box-shadow:0 6px 20px rgba(0,0,0,.07)}
 .tile{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:13px 14px;
   display:flex;flex-direction:column;justify-content:space-between;gap:4px;min-width:0;min-height:104px}
 .tile .k{font-size:12.5px;color:var(--muted);line-height:1.35}
@@ -750,7 +761,7 @@ button.ghost:hover{background:var(--surface-2)}
       <div class="card">
         <div class="scroll"><table id="custTable"></table></div>
       </div>
-      <div class="card" id="custDetailCard" hidden>
+      <div id="cdHome"><div class="card" id="custDetailCard" hidden>
         <header><h2 id="cdName"></h2><span style="display:flex;gap:7px;flex-wrap:wrap">
           <button class="ghost" id="cdSlip">สลิปส่งลูกค้า</button>
           <button class="ghost" id="cdCard">การ์ดผ่อน / ปริ้น</button>
@@ -760,7 +771,7 @@ button.ghost:hover{background:var(--surface-2)}
         <div class="scroll"><table id="cdRounds"></table></div>
         <div class="subhead">รายการรับเงินแต่ละครั้ง</div>
         <div class="scroll"><table id="cdHistory"></table></div>
-      </div>
+      </div></div>
     </section>
 
     <!-- จากหน้าบ้าน -->
@@ -896,6 +907,7 @@ button.ghost:hover{background:var(--surface-2)}
             <label>เงินสดจริงที่นับได้ (บาท)<input type="number" id="mReal" step="100" min="0"
               placeholder="ใส่ยอดที่นับได้จริง"></label>
           </div>
+          <p class="note" id="mSrc" style="margin-bottom:10px"></p>
           <div class="split" id="mEq"></div>
           <p class="note" id="mDiff"></p>
         </div>
@@ -1221,8 +1233,8 @@ const EXP_SEED = [
   {date:'2026-10-04',item:'ค่าน้ำมัน',amount:500,source:'เดินเก็บ'},
   {date:'2026-10-10',item:'ค่าน้ำมัน',amount:500,source:'เดินเก็บ'},
 ];
-let dbExpenses = [], expenses = EXP_SEED.slice();
-function rebuildExpenses(){ expenses = EXP_SEED.concat(dbExpenses) }
+let dbExpenses = [], expenses = (DEMO_SEED ? EXP_SEED : []).slice();
+function rebuildExpenses(){ expenses = (DEMO_SEED ? EXP_SEED : []).concat(dbExpenses) }
 
 // ---------- helper ----------
 const d = s => { const [y,m,dd]=s.split('-').map(Number); return new Date(y,m-1,dd); };
@@ -1316,7 +1328,11 @@ let contracts = [], payments = [], SEEDED = [];
 payments = SEEDED.slice();
 const BASE = contracts.slice();
 let dbContracts = [], apps = [];
-function rebuildContracts(){ contracts = BASE.concat(dbContracts) }
+function rebuildContracts(){
+  // เลขที่สัญญาซ้ำกัน ให้ยึดของฐานข้อมูลเป็นหลัก กันนับซ้ำสองรอบ
+  const fromDb=new Set(dbContracts.map(c=>String(c.no)));
+  contracts = BASE.filter(c=>!fromDb.has(String(c.no))).concat(dbContracts);
+}
 function nextContractNo(){              // เลขที่สัญญา ไล่ต่อไปเรื่อย ๆ ทุกใบ
   let max=0; contracts.forEach(c=>{ const n=Number(String(c.no).slice(4)); if(n>max) max=n });
   return '2569'+String(max+1).padStart(4,'0');
@@ -1670,6 +1686,9 @@ function renderCust(){
     custFilter==='active' ? ['ok','watch','risk'].includes(s.st) :
     custFilter==='late' ? ['watch','risk'].includes(s.st) :
     custFilter==='closed' ? s.st==='closed' : s.st==='pending');
+  // ดึงการ์ดรายละเอียดออกมาพักไว้ก่อน ไม่งั้นมันโดนลบทิ้งตอนวาดตารางใหม่
+  const keep=document.getElementById('custDetailCard');
+  if(keep) document.getElementById('cdHome').appendChild(keep);
   document.getElementById('custTable').innerHTML =
     `<thead><tr><th>รหัส</th><th>ลูกค้า</th><th>เลขที่สัญญา</th><th>แผน</th><th class="r">ยอดกู้</th>
       <th class="r">ชำระมาแล้ว</th><th class="r">คงเหลือ</th><th>ความคืบหน้า</th><th class="r">ค้าง (รอบ)</th><th>สถานะ</th></tr></thead><tbody>`+
@@ -1680,11 +1699,17 @@ function renderCust(){
       <td class="r" style="color:var(--ok);font-weight:600">${B(s.paid)}</td>
       <td class="r" style="font-weight:600">${B(s.remain)}</td>
       <td><span class="bar"><i style="width:${s.pct}%"></i></span> <span class="mono" style="font-size:12px">${s.pct.toFixed(0)}%</span></td>
-      <td class="r">${s.behindRounds||'—'}</td><td>${pill(s.st)}</td></tr>`).join('')
+      <td class="r">${s.behindRounds||'—'}</td><td>${pill(s.st)}</td></tr>`
+      +(selected===c.no?`<tr class="drow"><td colspan="10" id="cdSlot"></td></tr>`:'')).join('')
       :`<tr><td colspan="10" style="color:var(--muted)">ไม่มีสัญญาในกลุ่มนี้</td></tr>`)+'</tbody>';
   document.querySelectorAll('#custTable tr.clickable').forEach(tr=>
-    tr.onclick=()=>{selected=tr.dataset.no;renderCust();renderDetail()});
+    tr.onclick=()=>{selected = selected===tr.dataset.no ? null : tr.dataset.no;
+      renderCust();renderDetail()});
+  // ย้ายการ์ดรายละเอียดเข้าไปอยู่ใต้แถวที่กด (ถ้าไม่มีแถวไหนถูกเลือก ก็เก็บกลับที่เดิม)
+  const slot=document.getElementById('cdSlot'), dcard=document.getElementById('custDetailCard');
+  if(slot&&dcard) slot.appendChild(dcard);
   renderDetail();
+  if(slot) dcard.scrollIntoView({block:'nearest',behavior:'smooth'});
 }
 function renderDetail(){
   const card=document.getElementById('custDetailCard');
@@ -3059,6 +3084,19 @@ function renderMoney(){
       <div class="s">${diff===null?'รอใส่เงินสดจริง':diff===0?'ตรงกันพอดี'
         :diff>0?'เงินจริงมากกว่าระบบ':'เงินจริงน้อยกว่าระบบ'}</div></div>`;
 
+  const src=document.getElementById('mSrc');
+  if(src){
+    const L=(typeof LOADED!=='undefined')?LOADED:null;
+    if(!L){ src.textContent='โหมดเก็บข้อมูลในเครื่องนี้ · ไม่ได้ต่อฐานข้อมูลกลาง'; src.style.color='var(--muted)'; }
+    else {
+      const names={contracts:'สัญญา',collections:'รับเงิน',expenses:'ค่าใช้จ่าย',
+                   applications:'คำขอ',visits:'เก็บไม่ได้',handovers:'ปิดรอบ'};
+      const parts=Object.keys(names).map(k=>names[k]+' '+(L[k]===undefined?'—':L[k]));
+      const bad=Object.keys(names).filter(k=>String(L[k]).startsWith('error'));
+      src.textContent='อ่านจากฐานข้อมูลได้: '+parts.join(' · ');
+      src.style.color = bad.length?'var(--bad)':'var(--muted)';
+    }
+  }
   document.getElementById('mEq').innerHTML=`
     <div>เงินทุนตั้งต้น <b>${B(CAPITAL)}</b></div>
     <div style="color:var(--bad)">− ปล่อยกู้ออก <b>${B(outCash)}</b></div>
