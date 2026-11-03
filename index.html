@@ -774,6 +774,11 @@ button.ghost:hover{background:var(--surface-2)}
         <div class="scroll"><table id="pendTable"></table></div>
       </div>
       <div class="card">
+        <header><h2>อนุมัติแล้ว</h2>
+          <span class="hint">แก้ยอด วันที่ หรือลบรายการที่ลงผิดได้ที่นี่</span></header>
+        <div class="scroll"><table id="apprTable"></table></div>
+      </div>
+      <div class="card">
         <header><h2>เก็บไม่ได้</h2><span class="hint">เหตุผลที่คนเดินเก็บบันทึกไว้</span></header>
         <div class="scroll"><table id="visitTable"></table></div>
       </div>
@@ -1854,16 +1859,69 @@ document.getElementById('nSave').onclick=async()=>{
   renderAll();
 };
 
+// ---------- แก้ไข / ลบ รายการที่บันทึกไปแล้ว ----------
+let editRow=null;                       // {coll,id} แถวที่กำลังแก้อยู่
+const isSeedRow = id => !id || String(id).startsWith('seed-');
+async function dbPatch(coll,id,patch,localStore){
+  if(dbOn && !String(id).startsWith('local-')){
+    try{ await DB.doc(coll+'/'+id).update(patch) }
+    catch(e){ syncLabel('แก้ไขไม่สำเร็จ · '+dbErrText(e),false); return false }
+    return true;
+  }
+  const r=localStore.find(x=>x.id===id); if(!r) return false;
+  Object.assign(r,patch); rebuildPayments(); rebuildExpenses(); renderAll(); return true;
+}
+async function dbDrop(coll,id,localStore){
+  if(dbOn && !String(id).startsWith('local-')){
+    try{ await DB.doc(coll+'/'+id).delete() }
+    catch(e){ syncLabel('ลบไม่สำเร็จ · '+dbErrText(e),false); return false }
+    return true;
+  }
+  const i=localStore.findIndex(x=>x.id===id); if(i<0) return false;
+  localStore.splice(i,1); rebuildPayments(); rebuildExpenses(); renderAll(); return true;
+}
+
 // ---------- ค่าใช้จ่าย ----------
 function renderExp(){
   const sum=expenses.reduce((a,e)=>a+Number(e.amount||0),0);
   document.getElementById('expTable').innerHTML=
-    `<thead><tr><th>วันที่</th><th>รายการ</th><th>ที่มา</th><th>หมายเหตุ</th><th class="r">ยอดเงิน</th></tr></thead><tbody>`+
+    `<thead><tr><th>วันที่</th><th>รายการ</th><th>ที่มา</th><th>หมายเหตุ</th>
+      <th class="r">ยอดเงิน</th><th></th></tr></thead><tbody>`+
     expenses.slice().sort((a,b)=>String(b.date).localeCompare(String(a.date)))
-      .map(e=>`<tr><td>${thDate(e.date)}</td><td>${esc(e.item)}</td>
+      .map(e=>{
+        const ed = editRow && editRow.coll==='expenses' && editRow.id===e.id;
+        if(ed) return `<tr data-erow="${e.id}">
+          <td><input type="date" data-ef="date" value="${esc(e.date)}"></td>
+          <td><input data-ef="item" value="${esc(e.item)}"></td>
+          <td>${esc(e.source||'หลังบ้าน')}</td>
+          <td><input data-ef="note" value="${esc(e.note||'')}" placeholder="หมายเหตุ"></td>
+          <td class="r"><input type="number" data-ef="amount" step="50" value="${Number(e.amount)||0}"></td>
+          <td class="r"><button class="ghost" data-esave="${e.id}">บันทึก</button>
+            <button class="ghost" data-ecancel="1">ยกเลิก</button></td></tr>`;
+        return `<tr><td>${thDate(e.date)}</td><td>${esc(e.item)}</td>
         <td>${esc(e.source||'หลังบ้าน')}${e.collector?' · '+esc(e.collector):''}</td>
-        <td>${esc(e.note||'—')}</td><td class="r">${B(e.amount)}</td></tr>`).join('')+
-    `</tbody><tfoot><tr><th colspan="4">รวมทั้งปี 2569</th><th class="r">${B(sum)}</th></tr></tfoot>`;
+        <td>${esc(e.note||'—')}</td><td class="r">${B(e.amount)}</td>
+        <td class="r">${isSeedRow(e.id)?'<span class="hint">ข้อมูลตั้งต้น</span>'
+          :`<button class="ghost" data-eedit="${e.id}">แก้</button>
+            <button class="ghost" data-edel="${e.id}" style="color:var(--bad)">ลบ</button>`}</td></tr>`;
+      }).join('')+
+    `</tbody><tfoot><tr><th colspan="4">รวมทั้งปี 2569</th><th class="r">${B(sum)}</th><th></th></tr></tfoot>`;
+
+  const T=document.getElementById('expTable');
+  T.querySelectorAll('[data-eedit]').forEach(b=>b.onclick=()=>{
+    editRow={coll:'expenses',id:b.dataset.eedit}; renderExp(); });
+  T.querySelectorAll('[data-ecancel]').forEach(b=>b.onclick=()=>{ editRow=null; renderExp() });
+  T.querySelectorAll('[data-edel]').forEach(b=>b.onclick=async()=>{
+    if(!confirm('ลบค่าใช้จ่ายรายการนี้?')) return;
+    if(await dbDrop('expenses',b.dataset.edel,dbExpenses)) syncLabel('ลบค่าใช้จ่ายแล้ว',true); });
+  T.querySelectorAll('[data-esave]').forEach(b=>b.onclick=async()=>{
+    const tr=b.closest('tr'), g=k=>tr.querySelector(`[data-ef="${k}"]`).value;
+    const amt=Number(g('amount'))||0, item=g('item').trim();
+    if(!item||amt<=0){ syncLabel('ใส่รายการและยอดเงินให้ครบ',false); return }
+    const ok=await dbPatch('expenses',b.dataset.esave,
+      {date:g('date')||iso(TODAY), item, note:g('note').trim(), amount:amt}, dbExpenses);
+    if(ok){ editRow=null; renderExp(); syncLabel('แก้ค่าใช้จ่ายแล้ว',true) }
+  });
 }
 document.getElementById('eSave').onclick=async()=>{
   const item=document.getElementById('eItem').value.trim(), amt=Number(document.getElementById('eAmt').value)||0;
@@ -1986,6 +2044,53 @@ function renderInbox(){
      :`<tr><td colspan="10" style="color:var(--muted)">ยังไม่มีรายการส่งเข้ามา</td></tr>`)+'</tbody>';
   document.querySelectorAll('#pendTable [data-ok]').forEach(b=>b.onclick=()=>decide(b.dataset.ok,'approved'));
   document.querySelectorAll('#pendTable [data-no]').forEach(b=>b.onclick=()=>decide(b.dataset.no,'rejected'));
+
+  const seen=appr.slice().sort((a,b)=>String(roundOf(b)).localeCompare(String(roundOf(a)))).slice(0,80);
+  document.getElementById('apprTable').innerHTML=
+    `<thead><tr><th>วันที่รับเงิน</th><th>รอบที่ปิดยอด</th><th>ลูกค้า</th><th>สัญญา</th>
+      <th class="r">ยอด</th><th>ผู้เก็บ</th><th>หมายเหตุ</th><th></th></tr></thead><tbody>`+
+    (seen.length?seen.map(r=>{
+      const ed = editRow && editRow.coll==='collections' && editRow.id===r.id;
+      if(ed) return `<tr>
+        <td><input type="date" data-cf="paid_at" value="${esc(r.paid_at||roundOf(r))}"></td>
+        <td><input type="date" data-cf="round_date" value="${esc(roundOf(r))}"></td>
+        <td>${esc(r.customer||'')}</td><td class="mono">${esc(r.contract_no||'')}</td>
+        <td class="r"><input type="number" data-cf="amount" step="50" value="${Number(r.amount)||0}"></td>
+        <td>${esc(r.collector||'—')}</td>
+        <td><input data-cf="note" value="${esc(r.note||'')}" placeholder="หมายเหตุ"></td>
+        <td class="r"><button class="ghost" data-csave="${r.id}">บันทึก</button>
+          <button class="ghost" data-ccancel="1">ยกเลิก</button></td></tr>`;
+      return `<tr><td>${r.paid_at?thDate(r.paid_at):'—'}</td>
+        <td>${thDate(roundOf(r))}</td>
+        <td>${esc(r.customer||'')}</td><td class="mono">${esc(r.contract_no||'')}</td>
+        <td class="r">${B(r.amount)}</td><td>${esc(r.collector||'—')}</td>
+        <td>${esc(r.note||'—')}</td>
+        <td class="r"><button class="ghost" data-cedit="${r.id}">แก้</button>
+          <button class="ghost" data-cback="${r.id}">ตีกลับ</button>
+          <button class="ghost" data-cdel="${r.id}" style="color:var(--bad)">ลบ</button></td></tr>`;
+     }).join('')
+     :`<tr><td colspan="8" style="color:var(--muted)">ยังไม่มีรายการที่อนุมัติ</td></tr>`)+'</tbody>';
+
+  const A=document.getElementById('apprTable');
+  A.querySelectorAll('[data-cedit]').forEach(b=>b.onclick=()=>{
+    editRow={coll:'collections',id:b.dataset.cedit}; renderInbox(); });
+  A.querySelectorAll('[data-ccancel]').forEach(b=>b.onclick=()=>{ editRow=null; renderInbox() });
+  A.querySelectorAll('[data-cback]').forEach(b=>b.onclick=()=>decide(b.dataset.cback,'pending'));
+  A.querySelectorAll('[data-cdel]').forEach(b=>b.onclick=async()=>{
+    if(!confirm('ลบรายการรับเงินนี้ออกจากบัญชี?')) return;
+    if(await dbDrop('collections',b.dataset.cdel,inbox)) syncLabel('ลบรายการแล้ว',true); });
+  A.querySelectorAll('[data-csave]').forEach(b=>b.onclick=async()=>{
+    const tr=b.closest('tr'), g=k=>tr.querySelector(`[data-cf="${k}"]`).value;
+    const amt=Number(g('amount'))||0;
+    if(amt<=0){ syncLabel('ยอดเงินต้องมากกว่า 0',false); return }
+    const rec=inbox.find(x=>x.id===b.dataset.csave)||{};
+    const c=contracts.find(x=>x.no===rec.contract_no);
+    const ok=await dbPatch('collections',b.dataset.csave,
+      {paid_at:g('paid_at'), round_date:g('round_date'), amount:amt,
+       installments:c?Number((amt/c.daily).toFixed(2)):Number(rec.installments)||0,
+       note:g('note').trim()}, inbox);
+    if(ok){ editRow=null; renderInbox(); syncLabel('แก้รายการแล้ว',true) }
+  });
 
   renderApps();
   document.getElementById('visitTable').innerHTML=
@@ -2276,9 +2381,9 @@ function openSlip(no){
 
       <div class="two">
         <div class="paid"><div class="k">ชำระมาแล้ว</div><div class="v">${B(s.paid)}</div>
-          <div class="s">${Math.floor(s.instPaid)} จาก ${c.days} งวด</div></div>
+          <div class="s">${Math.floor(s.instPaid)} จาก ${c.days} วัน</div></div>
         <div class="left"><div class="k">คงเหลือต้องชำระ</div><div class="v">${B(s.remain)}</div>
-          <div class="s">${s.st==='closed'?'ไม่มียอดค้าง':'อีก '+Math.ceil(s.remain/c.daily)+' งวด'}</div></div>
+          <div class="s">${s.st==='closed'?'ไม่มียอดค้าง':'อีก '+Math.ceil(s.remain/c.daily)+' วัน'}</div></div>
       </div>
       <div class="pbar"><i style="width:${s.pct}%"></i></div>
       <div class="pct">ชำระแล้ว ${s.pct.toFixed(0)}% ของยอดทั้งสัญญา</div>
@@ -2291,7 +2396,7 @@ function openSlip(no){
           : `<div class="next"><span>ครบกำหนดสัญญาแล้ว<br>กรุณาติดต่อเจ้าหน้าที่</span><b>${B(s.remain)}</b></div>`}
 
       <div class="rows">รายการชำระล่าสุด</div>
-      <table><thead><tr><th>วันที่ชำระ</th><th class="r">จำนวนเงิน</th><th class="r">งวด</th></tr></thead>
+      <table><thead><tr><th>วันที่ชำระ</th><th class="r">จำนวนเงิน</th><th class="r">วัน</th></tr></thead>
       <tbody>${shown.map(p=>`<tr><td>${thDate(p.paid||p.date)}${(p.paid&&p.paid!==p.date)
           ?`<span style="color:#6b7b80"> · รอบ ${thDate(p.date)}</span>`:''}</td>
         <td class="r">${B(p.amount)}</td>
@@ -2408,9 +2513,9 @@ function openCard(no){
       </div>
       <div class="two">
         <div class="paid"><div class="k">ชำระมาแล้ว</div><div class="v">${B(s.paid)}</div>
-          <div class="s">${Math.floor(s.instPaid)} จาก ${c.days} งวด</div></div>
+          <div class="s">${Math.floor(s.instPaid)} จาก ${c.days} วัน</div></div>
         <div class="left"><div class="k">คงเหลือ</div><div class="v">${B(s.remain)}</div>
-          <div class="s">${s.st==='closed'?'ปิดสัญญาแล้ว':'อีก '+Math.ceil(s.remain/c.daily)+' งวด'}</div></div>
+          <div class="s">${s.st==='closed'?'ปิดสัญญาแล้ว':'อีก '+Math.ceil(s.remain/c.daily)+' วัน'}</div></div>
       </div>
       <div class="pbar"><i style="width:${s.pct}%"></i></div>
       ${s.st!=='closed'?`<div class="nextline">ต้องเก็บครั้งถัดไป <b>${B(Math.round(s.collectNext))}</b>
@@ -2657,10 +2762,12 @@ document.getElementById('clSend').onclick=async()=>{
   const dt=fieldDate(), who=collector();
   const otherItem=document.getElementById('clOtherItem').value.trim()||'ค่าใช้จ่ายอื่น';
   const note=document.getElementById('clNote').value.trim();
-  if(fuel>0) await dbAdd('expenses',{date:dt,item:'ค่าน้ำมัน',amount:fuel,source:'เดินเก็บ',
+  if(fuel>0){ const r1=await dbAdd('expenses',{date:dt,item:'ค่าน้ำมัน',amount:fuel,source:'เดินเก็บ',
     collector:who,note,created_at:new Date().toISOString()}, dbExpenses);
-  if(other>0) await dbAdd('expenses',{date:dt,item:otherItem,amount:other,source:'เดินเก็บ',
+    if(r1!==true){ ftoast('บันทึกค่าน้ำมันไม่สำเร็จ ('+r1+') ยังไม่ปิดรอบ',false); return } }
+  if(other>0){ const r2=await dbAdd('expenses',{date:dt,item:otherItem,amount:other,source:'เดินเก็บ',
     collector:who,note,created_at:new Date().toISOString()}, dbExpenses);
+    if(r2!==true){ ftoast('บันทึกค่าใช้จ่ายอื่นไม่สำเร็จ ('+r2+') ยังไม่ปิดรอบ',false); return } }
   const res=await dbAdd('handovers',{date:dt,collector:who,count:rows.length,total:got,
     fuel,other,other_item:other>0?otherItem:'',net:got-fuel-other,note,
     at:new Date().toISOString()}, handovers);
