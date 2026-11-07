@@ -18,7 +18,6 @@ const SUPABASE_KEY  = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFz
 const DEMO_SEED = false;
 const BUCKET = 'loan-photos';
 
-
 const SB_URL = String(SUPABASE_URL).trim().replace(/\/+$/, '');
 const SB = (SB_URL.includes('xxxxxxxxxxxx') || !window.supabase)
   ? null : window.supabase.createClient(SB_URL, String(SUPABASE_KEY).trim());
@@ -1446,7 +1445,8 @@ function state(c){
   let acc=0, next=null;
   for(const r of rs){ acc+=r.inst; if(!next && acc>instPaid+0.01) next=r }
   let st;
-  if(paid>=c.total-0.5) st='closed';
+  if(c.voided) st='void';
+  else if(paid>=c.total-0.5) st='closed';
   else if(d(c.start)>TODAY) st='pending';
   else if(behind===0) st='ok';
   else if(behindRounds<=1) st='watch';
@@ -1516,13 +1516,16 @@ function custHistoryHTML(c){
 }
 
 const ST = {ok:['ปกติ','p-ok'],watch:['เฝ้าระวัง','p-warn'],risk:['เสี่ยง','p-bad'],
-            closed:['ปิดสัญญา','p-idle'],pending:['รอเริ่ม','p-idle']};
+            closed:['ปิดสัญญา','p-idle'],pending:['รอเริ่ม','p-idle'],
+            void:['ยกเลิกแล้ว','p-bad']};
+const isVoid = c => !!(c && c.voided);
 const pill = st => `<span class="pill ${ST[st][1]}">${ST[st][0]}</span>`;
 
 function totals(){
   let disbursed=0,collected=0,principalPaid=0,interestPaid=0,outstanding=0,waiting=0;
   const counts={ok:0,watch:0,risk:0,closed:0,pending:0};
   contracts.forEach(c=>{ const s=state(c); counts[s.st]++;
+    if(s.st==='void') return;                          // ยกเลิกแล้ว เงินถือว่าไม่ได้ออกไป
     if(s.st==='pending'){waiting+=c.amount;return}
     disbursed+=c.amount; collected+=s.paid; principalPaid+=s.principalPaid;
     interestPaid+=s.interestPaid; outstanding+=s.outstanding; });
@@ -1609,7 +1612,7 @@ function renderDash(){
       <span>ปล่อยกู้สะสม <b>${B(t.disbursed)}</b></span>
       <span>เก็บคืนแล้ว <b>${B(t.collected)}</b></span>
       <span>ดอกค้างรับ <b>${B(contracts.reduce((a,c)=>{const s=state(c);
-        return a+(s.st==='pending'?0:c.interest-s.interestPaid)},0))}</b></span></div>`;
+        return a+(s.st==='pending'||s.st==='void'?0:c.interest-s.interestPaid)},0))}</b></span></div>`;
 
   // สุขภาพพอร์ต
   const grp=[['ok','ปกติ','var(--ok)'],['watch','เฝ้าระวัง','var(--warn)'],['risk','เสี่ยง','var(--bad)']];
@@ -1684,16 +1687,18 @@ function personRows(){                 // หนึ่งแถวต่อห�
   contracts.forEach(c=>{ (by[custKey(c)]=by[custKey(c)]||[]).push(c) });
   return Object.values(by).map(list=>{
     list.sort((a,b)=>String(b.start).localeCompare(String(a.start)));
-    const open=list.filter(c=>state(c).st!=='closed');
-    const c=open[0]||list[0];
+    const open=list.filter(c=>!['closed','void'].includes(state(c).st));
+    const c=open[0]||list.find(x=>state(x).st!=='void')||list[0];
     return {c, s:state(c), others:list.length-1,
             closedN:list.filter(x=>state(x).st==='closed').length,
+            voidN:list.filter(x=>state(x).st==='void').length,
             openN:open.length, all:list};
   }).sort((a,b)=>Number(a.c.id)-Number(b.c.id));
 }
 // ป้ายบอกว่าลูกค้ารายนี้มีสัญญาใบอื่นอีกไหม · แยกใบที่ปิดแล้วกับใบที่ยังเดินอยู่
-function tagOther(closedN,openN){
+function tagOther(closedN,openN,voidN){
   const out=[];
+  if(voidN) out.push(`<span class="backtag" style="color:var(--bad);border-color:var(--bad)">${voidN} ใบยกเลิก</span>`);
   if(openN>1) out.push(`<span class="backtag" style="color:var(--warn);border-color:var(--warn)">เดินอยู่ ${openN} ใบ</span>`);
   if(closedN) out.push(`<span class="backtag" style="color:var(--muted);border-color:var(--line)">+${closedN} ใบเก่า</span>`);
   return out.join('');
@@ -1711,9 +1716,9 @@ function renderCust(){
   document.getElementById('custTable').innerHTML =
     `<thead><tr><th>รหัส</th><th>ลูกค้า</th><th>เลขที่สัญญา</th><th>แผน</th><th class="r">ยอดกู้</th>
       <th class="r">ชำระมาแล้ว</th><th class="r">คงเหลือ</th><th>ความคืบหน้า</th><th class="r">ค้าง (รอบ)</th><th>สถานะ</th></tr></thead><tbody>`+
-    (list.length?list.map(({c,s,others,closedN,openN})=>`<tr class="clickable ${selected===c.no?'sel':''}" data-no="${c.no}">
+    (list.length?list.map(({c,s,others,closedN,openN,voidN})=>`<tr class="clickable ${selected===c.no?'sel':''}" data-no="${c.no}">
       <td class="mono">${c.id}</td><td>${esc(c.name)}</td>
-      <td class="mono">${c.no}${tagOther(closedN,openN)}</td><td>${c.plan}</td>
+      <td class="mono">${c.no}${tagOther(closedN,openN,voidN)}</td><td>${c.plan}</td>
       <td class="r">${B(c.amount)}</td>
       <td class="r" style="color:var(--ok);font-weight:600">${B(s.paid)}</td>
       <td class="r" style="font-weight:600">${B(s.remain)}</td>
@@ -1752,7 +1757,21 @@ function cdEditHTML(c){
   <div class="row" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
     <button id="ceSave">บันทึกการแก้ไข</button>
     <button class="ghost" id="ceCancel">ยกเลิก</button>
-  </div>`;
+  </div>
+  <div class="subhead" style="border-color:var(--bad);color:var(--bad)">ยกเลิกสัญญา</div>
+  ${isVoid(c)
+    ? `<p class="note">ใบนี้ถูกยกเลิกเมื่อ <b>${thDate(c.void_at||c.start)}</b>
+         ${c.void_reason?' · เหตุผล: '+esc(c.void_reason):''}<br>
+         เงินที่ปล่อยถูกคืนเข้ายอดเงินสดแล้ว และใบนี้ไม่ถูกนับในยอดค้างหรือกำไร</p>
+       <button class="ghost" id="ceUnvoid">คืนสถานะใช้งาน</button>`
+    : `<p class="note">ใช้เมื่อสัญญาใบนี้<b>ไม่ควรมีอยู่</b> เช่น เปิดเกินมา หรือเปิดผิดคนแล้วเงินยังไม่ออก<br>
+         ใบนี้จะยังอยู่ในระบบให้ดูย้อนหลังได้ แต่หลุดจากหน้าเดินเก็บ
+         และเงินที่ปล่อยจะคืนกลับเข้ายอดเงินสด</p>
+       <div class="form"><label>เหตุผลที่ยกเลิก<input id="ceVReason"
+         placeholder="เช่น เปิดผิดคน ยังไม่ได้จ่ายเงิน"></label></div>
+       <p class="note" id="ceVWarn" style="color:var(--bad)"></p>
+       <button class="ghost" id="ceVoid" style="color:var(--bad);border-color:var(--bad)">
+         ยกเลิกสัญญาใบนี้</button>`}`;
 }
 function cePreview(){
   const c=contracts.find(x=>x.no===selected); if(!c) return;
@@ -1778,6 +1797,11 @@ function cePreview(){
   const paid=payments.filter(x=>x.no===c.no).reduce((a,x)=>a+x.amount,0);
   const W=document.getElementById('ceWarn'); const msg=[];
   if(match) msg.push(`เบอร์นี้ตรงกับ <b>${esc(match.name)}</b> รหัส <b>${match.id}</b> — ใส่รหัสนี้เพื่อให้ประวัติต่อกัน`);
+  const nameNow=document.getElementById('ceName').value.trim();
+  const paidAll=payments.filter(x=>x.no===c.no).reduce((a,x)=>a+x.amount,0);
+  if(nameNow && nameNow!==c.name && paidAll>0)
+    msg.push(`<span style="color:var(--bad)">ใบนี้รับเงินมาแล้ว <b>${B(paidAll)}</b> —
+      ถ้าเงินก้อนนี้เป็นของคนเดิม อย่าแก้ชื่อ ให้ยกเลิกใบนี้แล้วเปิดใบใหม่แทน</span>`);
   if(paid>total) msg.push(`<span style="color:var(--bad)">เก็บมาแล้ว ${B(paid)} เกินยอดใหม่ ${B(total)}</span>`);
   if(up) msg.push(upfrontNote(up,daily,days,start));
   W.innerHTML=msg.join(' · ');
@@ -1792,6 +1816,33 @@ function openCdEdit(){
     document.getElementById(id).oninput=cePreview);
   document.getElementById('ceUpf').onchange=cePreview;
   document.getElementById('ceCancel').onclick=()=>{cdEditing=false;renderDetail()};
+  const paidNow=payments.filter(x=>x.no===c.no).reduce((a,x)=>a+x.amount,0);
+  const vw=document.getElementById('ceVWarn');
+  if(vw && paidNow>0) vw.innerHTML=`ใบนี้มีเงินเข้ามาแล้ว <b>${B(paidNow)}</b> —
+    ยกเลิกแล้วยอดนี้จะไม่ถูกนับเป็นเงินสด ถ้าเก็บเงินมาจริงให้ย้ายรายการไปใบใหม่
+    ที่หน้า “จากหน้าบ้าน → อนุมัติแล้ว” ก่อน`;
+  const setVoid=async(on,reason)=>{
+    const patch = on ? {voided:true, void_reason:reason||'', void_at:iso(TODAY)}
+                     : {voided:false, void_reason:'', void_at:null};
+    if(dbOn && dbContracts.some(x=>String(x.no)===String(c.no))){
+      try{ await DB.doc('contracts/'+c.no).update(patch) }
+      catch(e){ syncLabel((on?'ยกเลิกสัญญา':'คืนสถานะ')+'ไม่สำเร็จ · '+dbErrText(e),false); return }
+    } else {
+      Object.assign(c,patch);
+      const base=BASE.find(x=>String(x.no)===String(c.no)); if(base) Object.assign(base,patch);
+      rebuildContracts(); renderAll();
+    }
+    cdEditing=false; renderDetail(); syncLabel(on?'ยกเลิกสัญญาแล้ว':'คืนสถานะใช้งานแล้ว',true);
+  };
+  const vb=document.getElementById('ceVoid');
+  if(vb) vb.onclick=()=>{
+    const reason=document.getElementById('ceVReason').value.trim();
+    if(!reason){ syncLabel('ใส่เหตุผลที่ยกเลิกก่อน',false); return }
+    if(confirm('ยกเลิกสัญญา '+c.no+' ?\nใบนี้จะหลุดจากหน้าเดินเก็บ และเงินที่ปล่อยจะคืนเข้ายอดเงินสด'))
+      setVoid(true,reason);
+  };
+  const ub=document.getElementById('ceUnvoid');
+  if(ub) ub.onclick=()=>setVoid(false);
   document.getElementById('ceSave').onclick=async()=>{
     const v=cePreview(); if(!v) return;
     const name=document.getElementById('ceName').value.trim();
@@ -1823,7 +1874,8 @@ function renderDetail(){
   const c=contracts.find(x=>x.no===selected); if(!c){card.hidden=true;return}
   const s=state(c); card.hidden=false;
   document.getElementById('cdName').innerHTML = esc(c.name)+' · <span class="mono">'+c.no+'</span>'
-    + (s.st==='closed' ? ' <span class="backtag" style="color:var(--muted);border-color:var(--line)">สัญญาปิดแล้ว</span>' : '');
+    + (s.st==='closed' ? ' <span class="backtag" style="color:var(--muted);border-color:var(--line)">สัญญาปิดแล้ว</span>' : '')
+    + (s.st==='void' ? ' <span class="backtag" style="color:var(--bad);border-color:var(--bad)">ยกเลิกแล้ว</span>' : '');
   document.getElementById('cdDetail').innerHTML = `
     <div><div class="k">เบอร์โทร</div><div class="v mono" style="font-size:15px">${c.phone}</div></div>
     <div><div class="k">ยอดกู้ / ต้องจ่ายรวม</div><div class="v">${B(c.amount)} / ${B(c.total)}</div></div>
@@ -2097,7 +2149,7 @@ function renderProfit(){
   document.getElementById('profitTiles').innerHTML=`
     <div class="tile hero"><div class="k">กำไรสุทธิปี 2569</div><div class="v">${B(t.net)}</div><div class="s">ดอกที่เก็บได้ ${B(t.interestPaid)} − ค่าใช้จ่าย ${B(t.exp)}</div></div>
     <div class="tile"><div class="k">ยอดเก็บได้ทั้งปี</div><div class="v">${B(t.collected)}</div><div class="s">เงินต้นคืนแล้ว ${B(t.principalPaid)}</div></div>
-    <div class="tile"><div class="k">ดอกค้างรับ</div><div class="v">${B(contracts.reduce((a,c)=>{const s=state(c);return a+(s.st==='pending'?0:c.interest-s.interestPaid)},0))}</div><div class="s">จากสัญญาที่ยังเดินอยู่</div></div>
+    <div class="tile"><div class="k">ดอกค้างรับ</div><div class="v">${B(contracts.reduce((a,c)=>{const s=state(c);return a+(s.st==='pending'||s.st==='void'?0:c.interest-s.interestPaid)},0))}</div><div class="s">จากสัญญาที่ยังเดินอยู่</div></div>
     <div class="tile"><div class="k">หนี้เสียที่ตัดออก</div><div class="v">0</div><div class="s">ยังไม่มีสัญญาเกินกำหนด 30 วัน</div></div>`;
   const rows=THM.map((m,i)=>{
     const ps=payments.filter(p=>Number(p.date.split('-')[1])===i+1);
@@ -3152,10 +3204,11 @@ document.querySelectorAll('.nav button[data-view]').forEach(b=>b.onclick=()=>{
 function moneyRows(){
   const out=[], inn=[];
   contracts.forEach(c=>{
-    if(state(c).st==='pending') return;                // ยังไม่ถึงวันเริ่ม เงินยังไม่ออก
+    const st0=state(c).st;
+    if(st0==='pending'||st0==='void') return;          // ยังไม่ถึงวันเริ่ม หรือยกเลิกแล้ว เงินไม่ได้ออก
     out.push({date:c.start,no:c.no,name:c.name,amount:c.amount,upfront:Number(c.upfront)||0});
   });
-  const live=new Set(contracts.filter(c=>state(c).st!=='pending').map(c=>c.no));
+  const live=new Set(contracts.filter(c=>!['pending','void'].includes(state(c).st)).map(c=>c.no));
   const byDate={};
   payments.filter(p=>live.has(p.no)).forEach(p=>{
     (byDate[p.date]=byDate[p.date]||{date:p.date,amount:0,n:0,upfront:0});
