@@ -18,6 +18,7 @@ const SUPABASE_KEY  = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFz
 const DEMO_SEED = false;
 const BUCKET = 'loan-photos';
 
+
 const SB_URL = String(SUPABASE_URL).trim().replace(/\/+$/, '');
 const SB = (SB_URL.includes('xxxxxxxxxxxx') || !window.supabase)
   ? null : window.supabase.createClient(SB_URL, String(SUPABASE_KEY).trim());
@@ -665,6 +666,9 @@ button.ghost:hover{background:var(--surface-2)}
 .slip .next span{font-size:12.5px}
 .slip .next b{font-family:var(--font-d);font-size:20px;font-variant-numeric:tabular-nums;white-space:nowrap}
 .slip .next.done{background:#eef5f3;border-color:#bcdcd4;color:#0d7a72;justify-content:center}
+/* ข้อความยาว ต้องตัดบรรทัดได้ ไม่งั้นล้นกรอบบนจอแคบ */
+.slip .next.done b{white-space:normal;text-align:center;line-height:1.45;
+  font-size:clamp(14px,4.4vw,19px);max-width:100%;overflow-wrap:anywhere}
 
 .slip .rows{font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:#6b7b80;
   font-weight:600;margin-bottom:7px}
@@ -677,6 +681,19 @@ button.ghost:hover{background:var(--surface-2)}
 .slip td.r,.slip th.r{text-align:right}
 .slip .ft{margin-top:14px;padding-top:11px;border-top:1px dashed #dde5e6;
   font-size:10.5px;color:#8a989c;text-align:center}
+/* จอแคบ: บีบระยะในสลิปให้ตารางไม่ล้นขอบ */
+@media (max-width:380px){
+  .slip .body{padding:13px 12px 14px}
+  .slip .sh{padding:12px 13px}
+  .slip th,.slip td{padding:7px 5px;font-size:12px}
+  .slip th{font-size:10px}
+  .slip .two{gap:7px}
+  .slip .two>div{padding:11px 10px}
+  .slip .two .v{font-size:23px}
+  .slip .g4 div{padding:8px 4px}
+  .slip .g4 b{font-size:14px}
+  .slip .g4 span{font-size:9.5px}
+}
 .subhead{padding:14px 15px 7px;font-size:11.5px;letter-spacing:.05em;text-transform:uppercase;
   color:var(--muted);font-weight:600;border-top:1px solid var(--line)}
 
@@ -765,8 +782,10 @@ button.ghost:hover{background:var(--surface-2)}
         <header><h2 id="cdName"></h2><span style="display:flex;gap:7px;flex-wrap:wrap">
           <button class="ghost" id="cdSlip">สลิปส่งลูกค้า</button>
           <button class="ghost" id="cdCard">การ์ดผ่อน / ปริ้น</button>
+          <button class="ghost" id="cdEdit">แก้สัญญา</button>
           <button class="ghost" id="cdClose">ปิด</button></span></header>
         <div class="detail" id="cdDetail"></div>
+        <div id="cdEditBox" hidden></div>
         <div class="subhead">สรุปรายรอบ · ต้องเก็บเทียบกับเก็บได้จริง</div>
         <div class="scroll"><table id="cdRounds"></table></div>
         <div class="subhead">รายการรับเงินแต่ละครั้ง</div>
@@ -1711,6 +1730,93 @@ function renderCust(){
   renderDetail();
   if(slot) dcard.scrollIntoView({block:'nearest',behavior:'smooth'});
 }
+// ---------- แก้สัญญา (เฉพาะเจ้าของ) ----------
+let cdEditing=false;
+function cdEditHTML(c){
+  return `<div class="subhead">แก้สัญญา · เลขที่ ${c.no}</div>
+  <div class="form">
+    <label>ชื่อลูกค้า<input id="ceName" value="${esc(c.name)}"></label>
+    <label>เบอร์โทร<input id="cePhone" value="${esc(c.phone||'')}" inputmode="tel"></label>
+    <label>รหัสลูกค้า<input id="ceId" value="${esc(c.id)}" class="mono"></label>
+    <label>ยอดกู้ (บาท)<input type="number" id="ceAmt" step="1000" min="0" value="${c.amount}"></label>
+    <label>จำนวนวัน<input type="number" id="ceDays" min="1" value="${c.days}"></label>
+    <label>ดอกเบี้ย (%)<input type="number" id="ceInt" step="1" min="0"
+      value="${Math.round(c.interest/c.amount*100)}"></label>
+    <label>วันเริ่มสัญญา<input type="date" id="ceStart" value="${esc(c.start)}"></label>
+    <label>หักงวดแรก<select id="ceUpf"></select></label>
+    <label id="ceUpfC" hidden>ยอดที่หัก (บาท)<input type="number" id="ceUpfAmt" step="50" min="0"
+      value="${Number(c.upfront)||0}"></label>
+  </div>
+  <div class="split" id="cePrev"></div>
+  <p class="note" id="ceWarn"></p>
+  <div class="row" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+    <button id="ceSave">บันทึกการแก้ไข</button>
+    <button class="ghost" id="ceCancel">ยกเลิก</button>
+  </div>`;
+}
+function cePreview(){
+  const c=contracts.find(x=>x.no===selected); if(!c) return;
+  const amt=Math.max(0,Number(document.getElementById('ceAmt').value)||0);
+  const days=Math.max(1,Number(document.getElementById('ceDays').value)||1);
+  const pct=Math.max(0,Number(document.getElementById('ceInt').value)||0);
+  const start=document.getElementById('ceStart').value||c.start;
+  const interest=Math.ceil(amt*pct/100), total=amt+interest, daily=total/days;
+  const mode=document.getElementById('ceUpf').value;
+  document.getElementById('ceUpfC').hidden = mode!=='custom';
+  const up=upfrontOf(mode,daily,days,start,document.getElementById('ceUpfAmt').value);
+  const end=iso(addDays(d(start),days-1));
+  // เบอร์ตรงกับลูกค้าเก่าคนไหน ให้ใช้รหัสเดิมของคนนั้น
+  const ph=document.getElementById('cePhone').value.replace(/\D/g,'');
+  const match=contracts.find(x=>x.no!==c.no && String(x.phone||'').replace(/\D/g,'')===ph && ph.length>=9);
+  document.getElementById('cePrev').innerHTML=`
+    <div>ค่างวด <b>${B(daily)}</b> /วัน</div>
+    <div>เก็บทุกเสาร์ <b>${B(daily*7)}</b></div>
+    <div>ดอกเบี้ยรวม <b>${B(interest)}</b></div>
+    <div>ต้องเก็บรวม <b>${B(total)}</b></div>
+    <div>หักงวดแรก <b>${B(up)}</b></div>
+    <div>วันหมดสัญญา <b>${thDate(end)}</b></div>`;
+  const paid=payments.filter(x=>x.no===c.no).reduce((a,x)=>a+x.amount,0);
+  const W=document.getElementById('ceWarn'); const msg=[];
+  if(match) msg.push(`เบอร์นี้ตรงกับ <b>${esc(match.name)}</b> รหัส <b>${match.id}</b> — ใส่รหัสนี้เพื่อให้ประวัติต่อกัน`);
+  if(paid>total) msg.push(`<span style="color:var(--bad)">เก็บมาแล้ว ${B(paid)} เกินยอดใหม่ ${B(total)}</span>`);
+  if(up) msg.push(upfrontNote(up,daily,days,start));
+  W.innerHTML=msg.join(' · ');
+  return {amt,days,pct,start,interest,total,daily,mode,up,end};
+}
+function openCdEdit(){
+  const c=contracts.find(x=>x.no===selected); if(!c) return;
+  const box=document.getElementById('cdEditBox');
+  box.hidden=false; box.innerHTML=cdEditHTML(c);
+  document.getElementById('ceUpf').innerHTML=upfrontOptions(c.upfront_mode||'first');
+  ['ceAmt','ceDays','ceInt','ceStart','ceUpfAmt','cePhone'].forEach(id=>
+    document.getElementById(id).oninput=cePreview);
+  document.getElementById('ceUpf').onchange=cePreview;
+  document.getElementById('ceCancel').onclick=()=>{cdEditing=false;renderDetail()};
+  document.getElementById('ceSave').onclick=async()=>{
+    const v=cePreview(); if(!v) return;
+    const name=document.getElementById('ceName').value.trim();
+    const id=document.getElementById('ceId').value.trim();
+    if(!name||!id){ syncLabel('ใส่ชื่อลูกค้าและรหัสให้ครบ',false); return }
+    if(v.amt<=0){ syncLabel('ยอดกู้ต้องมากกว่า 0',false); return }
+    const patch={id,name,phone:document.getElementById('cePhone').value.trim(),
+      plan:v.days+' วัน', amount:v.amt, days:v.days, interest:v.interest, total:v.total,
+      daily:v.daily, start:v.start, end:v.end, upfront:v.up, upfront_mode:v.mode};
+    // สัญญาที่มาจากฐานข้อมูลให้แก้ที่ฐานข้อมูล · สัญญาตัวอย่างในไฟล์แก้ในเครื่องพอ
+    if(dbOn && dbContracts.some(x=>String(x.no)===String(c.no))){
+      try{ await DB.doc('contracts/'+c.no).update(patch) }
+      catch(e){ syncLabel('แก้สัญญาไม่สำเร็จ · '+dbErrText(e),false); return }
+    } else {
+      Object.assign(c,patch);
+      const base=BASE.find(x=>String(x.no)===String(c.no)); if(base) Object.assign(base,patch);
+      rebuildContracts(); renderAll();
+    }
+    // ชื่อในรายการรับเงินของสัญญานี้ ให้ตามชื่อใหม่ด้วย
+    const mine=inbox.filter(r=>r.contract_no===c.no && r.customer!==name);
+    for(const r of mine) await dbPatch('collections',r.id,{customer:name},inbox);
+    cdEditing=false; renderDetail(); syncLabel('แก้สัญญาแล้ว',true);
+  };
+  cePreview();
+}
 function renderDetail(){
   const card=document.getElementById('custDetailCard');
   if(!selected){card.hidden=true;return}
@@ -1738,6 +1844,8 @@ function renderDetail(){
     document.querySelectorAll('#custFilters button').forEach(x=>x.setAttribute('aria-pressed',String(x.dataset.f==='all')));
     renderCust();
   });
+  const eb=document.getElementById('cdEditBox');
+  if(cdEditing) openCdEdit(); else { eb.hidden=true; eb.innerHTML=''; }
   document.getElementById('cdRounds').innerHTML = roundsTableHTML(c);
   const ps = payments.filter(p=>p.no===c.no).sort((a,b)=>b.date.localeCompare(a.date));
   const rp = c.amount/c.total;
@@ -1749,7 +1857,8 @@ function renderDetail(){
       <td class="r">${(p.amount/c.daily).toFixed(0)}</td></tr>`).join('')
      :`<tr><td colspan="6" style="color:var(--muted)">ยังไม่มีรายการเก็บเงิน</td></tr>`)+'</tbody>';
 }
-document.getElementById('cdClose').onclick=()=>{selected=null;renderCust()};
+document.getElementById('cdClose').onclick=()=>{selected=null;cdEditing=false;renderCust()};
+document.getElementById('cdEdit').onclick=()=>{cdEditing=!cdEditing;renderDetail()};
 document.getElementById('cdCard').onclick=()=>{ if(selected) openCard(selected) };
 document.getElementById('cdSlip').onclick=()=>{ if(selected) openSlip(selected) };
 document.querySelectorAll('#custFilters button').forEach(b=>b.onclick=()=>{
