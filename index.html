@@ -537,7 +537,7 @@ button.ghost:hover{background:var(--surface-2)}
   background:var(--ink);color:var(--bg);font-size:13.5px;font-weight:500;padding:9px 16px;border-radius:99px;max-width:88vw;text-align:center;z-index:5}
 .ok-mark{color:var(--ok);font-size:12.5px;font-weight:600}
 
-/* แถบเลือกรอบที่กำลังบันทึก */
+/* แถบเลือกวันที่กำลังบันทึก */
 .roundbar{display:flex;align-items:center;gap:7px;margin-bottom:10px}
 .roundbar button.ghost{flex:0 0 auto;height:44px;padding:0 11px;font-size:15px}
 .roundbar button[disabled]{opacity:.35;pointer-events:none}
@@ -749,14 +749,14 @@ button.ghost:hover{background:var(--surface-2)}
       </div>
 
       <div class="card">
-        <header><h2>ยอดเก็บ 8 รอบล่าสุด</h2><span class="hint">รอบเก็บทุกวันเสาร์ · แยกเงินต้นกับดอกเบี้ย</span></header>
+        <header><h2>ยอดเก็บ 8 ครั้งล่าสุด</h2><span class="hint">แยกเงินต้นกับดอกเบี้ย</span></header>
         <div class="body"><div id="chartWrap"></div>
           <div class="legend"><span><i style="background:var(--accent)"></i>เงินต้น</span><span><i style="background:var(--warn)"></i>กำไร (ดอก)</span></div>
         </div>
       </div>
 
       <div class="card">
-        <header><h2>ต้องเก็บรอบนี้</h2><span class="hint">เรียงตามจำนวนรอบที่ค้าง</span></header>
+        <header><h2>ต้องเก็บวันนี้</h2><span class="hint">เรียงตามจำนวนวันที่ค้าง</span></header>
         <div class="scroll"><table id="dueTable"></table></div>
       </div>
     </section>
@@ -785,7 +785,7 @@ button.ghost:hover{background:var(--surface-2)}
           <button class="ghost" id="cdClose">ปิด</button></span></header>
         <div class="detail" id="cdDetail"></div>
         <div id="cdEditBox" hidden></div>
-        <div class="subhead">สรุปรายรอบ · ต้องเก็บเทียบกับเก็บได้จริง</div>
+        <div class="subhead">สรุปทุก 7 วัน · ต้องเก็บเทียบกับเก็บได้จริง</div>
         <div class="scroll"><table id="cdRounds"></table></div>
         <div class="subhead">รายการรับเงินแต่ละครั้ง</div>
         <div class="scroll"><table id="cdHistory"></table></div>
@@ -812,7 +812,7 @@ button.ghost:hover{background:var(--surface-2)}
         <div class="scroll"><table id="visitTable"></table></div>
       </div>
       <div class="card">
-        <header><h2>ปิดรอบนำส่งเงิน</h2><span class="hint">ยอดที่คนเดินเก็บแจ้งปิดรอบในแต่ละวัน</span></header>
+        <header><h2>ยอดนำส่งรายวัน</h2><span class="hint">ยอดที่คนเดินเก็บแจ้งนำส่งเงินในแต่ละวัน</span></header>
         <div class="scroll"><table id="handTable"></table></div>
       </div>
     </section>
@@ -846,7 +846,7 @@ button.ghost:hover{background:var(--surface-2)}
         <p>คำขอที่คนเดินเก็บส่งมาจากหน้าบ้าน ตรวจรูปและปรับยอดได้ก่อนกดอนุมัติ</p></div></div>
       <div class="tiles" id="loanTiles"></div>
       <div class="card">
-        <header><h2>รอตรวจและอนุมัติ</h2><span class="hint">อนุมัติแล้วสัญญาเริ่มนับรอบเก็บทันที</span></header>
+        <header><h2>รอตรวจและอนุมัติ</h2><span class="hint">อนุมัติแล้วสัญญาเริ่มนับวันทันที</span></header>
         <div class="body" id="approveBox"></div>
       </div>
       <div class="card">
@@ -896,7 +896,7 @@ button.ghost:hover{background:var(--surface-2)}
     <section id="v-rate" hidden>
       <div class="head"><div><h1>เรทการผ่อนชำระ</h1><p>ตารางเรทที่ใช้อ้างอิงทั้งระบบ แก้ที่นี่แล้วหน้าอื่นคิดตามทันที</p></div></div>
       <div class="card">
-        <header><h2>ตารางเรท</h2><span class="hint">ดอกเบี้ย 12% ต่อรอบ 28 วัน และ 20% ต่อรอบ 60 วัน</span></header>
+        <header><h2>ตารางเรท</h2><span class="hint">ดอกเบี้ย 12% ต่อ 28 วัน และ 20% ต่อ 60 วัน</span></header>
         <div class="scroll"><table id="rateTable"></table></div>
       </div>
       <div class="card">
@@ -983,12 +983,12 @@ button.ghost:hover{background:var(--surface-2)}
         <header><h2>สูตรที่ระบบคิดให้</h2><span class="hint">แทนสูตร Excel ที่ขึ้น #N/A</span></header>
         <div class="body">
           <ol class="steps">
-            <li>ค่างวดต่อวัน ดอกเบี้ยรวม และจำนวนรอบ ดึงจากตาราง <code>rate_plans</code> ตอนเปิดสัญญา แล้วบันทึกลงสัญญาเลย ไม่ต้อง lookup ย้อนหลัง</li>
-            <li>รอบเก็บเงินสร้างล่วงหน้าทั้งสัญญา: <code>รอบแรก = วันเสาร์ถัดจากวันเริ่มสัญญา</code> แล้วบวก 7 วันไปเรื่อย ๆ รอบละ 7 งวด (รอบสุดท้ายเหลือเท่าไหร่เก็บเท่านั้น)</li>
+            <li>ค่างวดต่อวัน ดอกเบี้ยรวม และจำนวนวัน ดึงจากตาราง <code>rate_plans</code> ตอนเปิดสัญญา แล้วบันทึกลงสัญญาเลย ไม่ต้อง lookup ย้อนหลัง</li>
+            <li>ตารางจ่ายสร้างล่วงหน้าทั้งสัญญา: <code>ช่วงแรก = วันเปิดสัญญา</code> แล้วบวกทีละ 7 วัน (ช่วงสุดท้ายเหลือเท่าไหร่เก็บเท่านั้น) ไม่ผูกกับวันในสัปดาห์</li>
             <li>แต่ละครั้งที่เก็บเงิน ตัดเงินต้นกับดอกตามสัดส่วนคงที่ของสัญญา: <code>เงินต้น = ยอดเก็บ × (ยอดกู้ ÷ ยอดต้องจ่ายทั้งหมด)</code> ส่วนที่เหลือเป็นกำไร</li>
-            <li>จ่ายมาแล้วกี่งวด = <code>ยอดเก็บสะสม ÷ ค่างวดต่อวัน</code> — จ่ายไม่เต็มรอบก็คิดเป็นเศษงวดได้</li>
-            <li>ค้างกี่รอบ = <code>(งวดของรอบที่ถึงกำหนดแล้ว − งวดที่จ่ายแล้ว) ÷ 7</code> ปัดขึ้น นับเฉพาะรอบที่วันเสาร์ผ่านไปแล้ว</li>
-            <li>สถานะ: ค้าง 0 รอบ = ปกติ, 1 รอบ = เฝ้าระวัง, เกิน 1 รอบ = เสี่ยง, เก็บครบ = ปิดสัญญา, ค้างเกิน 4 รอบ = ตัดเป็นหนี้เสีย</li>
+            <li>จ่ายมาแล้วกี่วัน = <code>ยอดเก็บสะสม ÷ ค่างวดต่อวัน</code> — จ่ายไม่ครบก็คิดเป็นเศษวันได้</li>
+            <li>ค้างกี่วัน = <code>วันที่ถึงกำหนดแล้ว − วันที่จ่ายไปแล้ว</code> · จ่ายล่วงหน้าครั้งละ 7 วัน</li>
+            <li>สถานะ: ค้างไม่เกิน 7 วัน = ปกติ, 8–14 วัน = เฝ้าระวัง, เกิน 14 วัน = เสี่ยง, เก็บครบ = ปิดสัญญา</li>
             <li>เงินสดพร้อมปล่อย = <code>เงินทุน − ยอดปล่อยไปแล้ว + ยอดเก็บสะสม − ค่าใช้จ่าย − ปันผลที่จ่ายแล้ว</code></li>
             <li>สินทรัพย์ทั้งหมด = <code>เงินสดพร้อมปล่อย + เงินต้นคงเหลือในมือลูกค้า</code></li>
           </ol>
@@ -1002,7 +1002,7 @@ button.ghost:hover{background:var(--surface-2)}
             <li>บันทึกพิกัด GPS กับเวลาจริงตอนกดบันทึกรับเงิน เอาไว้ตรวจย้อนหลังว่าไปถึงหน้าบ้านลูกค้าจริง</li>
             <li>โหมดออฟไลน์ เก็บรายการไว้ในเครื่องก่อนแล้วส่งเมื่อมีเน็ต เพราะบางพื้นที่สัญญาณไม่ถึง</li>
             <li>ส่งสลิปสรุปยอดเข้า LINE ให้ลูกค้าอัตโนมัติหลังบันทึกการจ่าย</li>
-            <li>แจ้งเตือนเช้าวันเสาร์: รายชื่อที่ต้องเก็บรอบนี้ ยอดรวมที่ควรได้ ใครค้างเกิน 1 รอบ สัญญาไหนใกล้หมด</li>
+            <li>แจ้งเตือนตอนเช้า: รายชื่อที่ต้องเก็บวันนี้ ยอดรวมที่ควรได้ ใครค้างเกิน 7 วัน สัญญาไหนใกล้หมด</li>
             <li>เก็บทุกการแก้ไขเป็น log ย้อนหลังได้ ว่าใครแก้ยอดอะไรเมื่อไหร่</li>
             <li>ปุ่มออกรายงานเป็น Excel หน้าตาเดิม เอาไว้ใช้เทียบช่วงเปลี่ยนระบบ</li>
           </ol>
@@ -1015,7 +1015,7 @@ button.ghost:hover{background:var(--surface-2)}
 <!-- หน้าบ้าน: หน้าจอคนเดินเก็บเงิน -->
 <div class="field" id="app-field">
   <div class="fhead">
-    <div><h1>รอบเก็บวันเสาร์</h1><p id="fDateLabel"></p></div>
+    <div><h1>เก็บเงินวันนี้</h1><p id="fDateLabel"></p></div>
     <span style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
       <button class="ghost" id="fSetup">ตั้งชื่อผู้เก็บ</button>
       <button class="ghost" id="toAdmin">หลังบ้าน</button>
@@ -1023,10 +1023,10 @@ button.ghost:hover{background:var(--surface-2)}
   </div>
 
   <div class="roundbar">
-    <button class="ghost" id="rPrev" title="รอบก่อนหน้า">◀</button>
-    <label class="rdate"><span>รอบที่กำลังบันทึก</span><input type="date" id="fDate"></label>
-    <button class="ghost" id="rNext" title="รอบถัดไป">▶</button>
-    <button class="ghost" id="rNow">ล่าสุด</button>
+    <button class="ghost" id="rPrev" title="วันก่อนหน้า">◀</button>
+    <label class="rdate"><span>วันที่กำลังบันทึก</span><input type="date" id="fDate"></label>
+    <button class="ghost" id="rNext" title="วันถัดไป">▶</button>
+    <button class="ghost" id="rNow">วันนี้</button>
   </div>
   <div class="warnbar" id="rWarn" hidden></div>
 
@@ -1042,9 +1042,9 @@ button.ghost:hover{background:var(--surface-2)}
   <input id="fSearch" placeholder="ค้นหาชื่อ เบอร์โทร หรือเลขที่สัญญา" style="margin-bottom:10px">
 
   <div class="filters" id="fFilters" style="margin-bottom:12px">
-    <button data-f="today" aria-pressed="true">รอบนี้ยังไม่เก็บ</button>
-    <button data-f="late" aria-pressed="false">ค้างรอบก่อน</button>
-    <button data-f="done" aria-pressed="false">เก็บแล้วรอบนี้</button>
+    <button data-f="today" aria-pressed="true">วันนี้ยังไม่เก็บ</button>
+    <button data-f="late" aria-pressed="false">ค้างเกินกำหนด</button>
+    <button data-f="done" aria-pressed="false">เก็บแล้ววันนี้</button>
     <button data-f="all" aria-pressed="false">ทั้งหมด</button>
   </div>
 
@@ -1052,7 +1052,7 @@ button.ghost:hover{background:var(--surface-2)}
 
   <div class="fbar">
     <div class="t">เงินสดที่ต้องนำส่ง<b id="fCash">0</b></div>
-    <button class="go" id="fClose">ปิดรอบส่งยอด</button>
+    <button class="go" id="fClose">ส่งยอดวันนี้</button>
   </div>
 </div>
 
@@ -1074,7 +1074,7 @@ button.ghost:hover{background:var(--surface-2)}
         <label id="asIntC" hidden>ดอกเบี้ยรวม (บาท)<input type="number" id="asInt" min="0" step="100" value="1800"></label>
       </div>
       <div class="form" style="gap:10px">
-        <label>วันเริ่มสัญญา (วันเสาร์)<input type="date" id="asStart"></label>
+        <label>วันเริ่มสัญญา<input type="date" id="asStart"></label>
         <label>หักงวดแรกตอนปล่อยเงิน<select id="asUpf"></select></label>
         <label id="asUpfC" hidden>ยอดที่หัก (บาท)<input type="number" id="asUpfAmt" min="0" step="50" value="0"></label>
       </div>
@@ -1098,20 +1098,20 @@ button.ghost:hover{background:var(--surface-2)}
 
       <label>หมายเหตุ / ที่อยู่โดยย่อ<input id="asNote" placeholder="เช่น ตลาดสดแม่กลอง ห้องที่ 12"></label>
       <button class="go" id="asSend">ส่งเรื่องให้เจ้าของอนุมัติ</button>
-      <p class="fmini" id="asHint">เจ้าของอนุมัติที่หลังบ้านแล้วสัญญาจะเริ่มนับรอบเก็บเงินทันที</p>
+      <p class="fmini" id="asHint">เจ้าของอนุมัติที่หลังบ้านแล้วสัญญาจะเริ่มนับวันทันที</p>
     </div>
   </div>
 </div>
 
-<!-- ปิดรอบส่งยอด -->
+<!-- ส่งยอดวันนี้ -->
 <div class="sheet" id="closeSheet" hidden>
   <div class="inner">
-    <header class="sheetbar"><b>ปิดรอบส่งยอด</b><span><button class="ghost" id="clClose">ปิด</button></span></header>
+    <header class="sheetbar"><b>ส่งยอดวันนี้</b><span><button class="ghost" id="clClose">ปิด</button></span></header>
     <div class="csblock" style="padding-top:14px;display:grid;gap:12px">
       <div class="cslines" style="padding:0">
-        <div><div class="k">วันที่รอบ</div><div class="v" id="clDate"></div></div>
+        <div><div class="k">วันที่</div><div class="v" id="clDate"></div></div>
         <div><div class="k">ผู้เก็บ</div><div class="v" id="clWho"></div></div>
-        <div><div class="k">เก็บได้รอบนี้</div><div class="v" id="clGot"></div></div>
+        <div><div class="k">เก็บได้วันนี้</div><div class="v" id="clGot"></div></div>
         <div><div class="k">จำนวนราย</div><div class="v" id="clCount"></div></div>
       </div>
       <div class="form" style="gap:10px">
@@ -1119,9 +1119,9 @@ button.ghost:hover{background:var(--surface-2)}
         <label>ค่าใช้จ่ายอื่น<input type="number" id="clOther" min="0" step="10" value="0"></label>
       </div>
       <label>รายการค่าใช้จ่ายอื่น<input id="clOtherItem" placeholder="เช่น ค่าปรับรถ ค่าโทรศัพท์"></label>
-      <label>หมายเหตุประจำรอบ<input id="clNote" placeholder="เช่น ฝนตกหนัก เก็บไม่ครบ 2 ราย"></label>
+      <label>หมายเหตุประจำวัน<input id="clNote" placeholder="เช่น ฝนตกหนัก เก็บไม่ครบ 2 ราย"></label>
       <div class="split" id="clSum"></div>
-      <button class="go" id="clSend">ยืนยันปิดรอบและนำส่งเงิน</button>
+      <button class="go" id="clSend">ยืนยันและนำส่งเงิน</button>
       <p class="fmini">ค่าใช้จ่ายที่ใส่ที่นี่จะเข้าหน้าค่าใช้จ่ายของหลังบ้านทันที และถูกหักก่อนคิดปันผล</p>
     </div>
   </div>
@@ -1178,7 +1178,7 @@ const RATES = [
   {plan:'60 วัน',amount:15000,daily:300,days:60,interest:3000},
   {plan:'60 วัน',amount:20000,daily:400,days:60,interest:4000},
 ];
-// missed = จำนวนรอบเสาร์ที่ยังไม่ได้เก็บ ใช้สร้างประวัติการจ่ายตัวอย่าง
+// missed = จำนวนครั้งที่ยังไม่ได้เก็บ ใช้สร้างประวัติการจ่ายตัวอย่าง
 const SEED = [
   // ข้อมูลจริง ณ 26 ต.ค. 2569 · สัญญาที่ปิดแล้วเก็บไว้เป็นประวัติ
   {id:'0001',name:'ลัดดา กุลชะโล',phone:'086-855-6392',contracts:[
@@ -1280,51 +1280,51 @@ function rateFor(amount,plan,days,interest){
 }
 
 // ---------- หักงวดแรกตอนปล่อยเงิน ----------
-const UPFRONT_DEFAULT='first';     // หักล่วงหน้าตั้งแต่วันปล่อยเงิน ถึงวันเสาร์แรก
-const UPFRONT_LABEL={none:'ไม่หัก', first:'หักถึงวันเสาร์แรก', custom:'กำหนดเอง (ใส่ยอด)'};
+const UPFRONT_DEFAULT='first';     // หักล่วงหน้า 7 วันแรกตอนปล่อยเงิน
+const UPFRONT_LABEL={none:'ไม่หัก', first:'หัก 7 วันแรก', custom:'กำหนดเอง (ใส่ยอด)'};
 function upfrontOf(mode,daily,days,start,custom){
   if(mode==='custom') return Math.max(0, Math.min(Math.round(Number(custom)||0), Math.round(daily*days)));
   if(mode!=='first') return 0;
-  const s=d(start||iso(TODAY));
-  const n=Math.min(days||7, dayDiff(satFrom(addDays(s,1)), s));
-  return Math.round(n*daily);
+  return Math.round(Math.min(days||BLOCK, BLOCK)*daily);   // 7 วันแรกเสมอ
 }
 function upfrontOptions(sel){
   return Object.keys(UPFRONT_LABEL)
     .map(k=>`<option value="${k}" ${k===(sel||UPFRONT_DEFAULT)?'selected':''}>${UPFRONT_LABEL[k]}</option>`).join('');
 }
-// อธิบายว่ายอดที่หักเทียบกับรอบแรกแล้วเป็นยังไง — ขาดเท่าไหร่ยกไปรอบถัดไป
+// อธิบายว่าหักไปแล้วจ่ายครอบคลุมถึงวันไหน
 function upfrontNote(up,daily,days,start){
   if(!up) return '';
-  const s=d(start||iso(TODAY)), n=Math.min(days||7, dayDiff(satFrom(addDays(s,1)), s));
+  const s=d(start||iso(TODAY)), n=Math.min(days||BLOCK, BLOCK);
   const full=Math.round(n*daily), diff=full-up;
   const inst=String(Number((up/daily).toFixed(2)));
-  const nextSat=thDate(satFrom(addDays(s,1)));
-  if(diff>0) return `หัก ${B(up)} = ${inst} งวด · ยังขาดอีก ${B(diff)} ยกไปเก็บเสาร์ ${nextSat}`;
-  if(diff<0) return `หัก ${B(up)} = ${inst} งวด · เกินงวดแรก ${B(-diff)} ส่วนเกินไปตัดเสาร์ ${nextSat} ให้เอง`;
-  return `หัก ${B(up)} = ${inst} งวด · พอดีถึงเสาร์ ${nextSat}`;
+  const thru=thDate(iso(addDays(s, Math.floor(up/daily)-1)));
+  if(diff>0) return `หัก ${B(up)} = ${inst} วัน · ยังขาดอีก ${B(diff)} ของ 7 วันแรก · จ่ายถึง ${thru}`;
+  if(diff<0) return `หัก ${B(up)} = ${inst} วัน · เกิน 7 วันแรก ${B(-diff)} · จ่ายถึง ${thru}`;
+  return `หัก ${B(up)} = ${inst} วัน · ครบ 7 วันแรก · จ่ายถึง ${thru}`;
 }
 
-// ---------- รอบเก็บเงิน: ทุกวันเสาร์ ----------
+// ---------- ช่วงเก็บเงิน: ทุก 7 วันนับจากวันเปิดสัญญา ----------
 const SAT = 6;
 function satFrom(x){ const r=new Date(x); r.setDate(r.getDate()+((SAT-r.getDay())+7)%7); return r }
-function thisRoundDate(){ return iso(satFrom(TODAY)) }   // เสาร์วันนี้ หรือเสาร์ถัดไป (ใช้ตอนเปิดสัญญา)
-function lastRoundDate(){                                 // รอบเก็บล่าสุดที่ถึงกำหนดแล้ว
-  const s=satFrom(TODAY);
-  return iso(iso(s)===iso(TODAY) ? s : addDays(s,-7));
-}
+const BLOCK = 7;                                 // เก็บล่วงหน้าครั้งละ 7 วัน
+function thisRoundDate(){ return iso(TODAY) }
+function lastRoundDate(){ return iso(TODAY) }    // วันที่กำลังบันทึก = วันนี้
 function rounds(c){
-  // รอบแรก = วันเปิดสัญญา หักล่วงหน้าถึงวันเสาร์แรก (อาจไม่ครบ 7 งวด)
-  // รอบถัดไป = ทุกวันเสาร์ รอบละ 7 งวด · รอบสุดท้ายเหลือเท่าไหร่เก็บเท่านั้น
-  const start=d(c.start), first=satFrom(addDays(start,1)), out=[];
-  let from=1, k=1, date=iso(start), inst=Math.min(c.days, dayDiff(first,start));
+  // แบ่งเป็นช่วงละ 7 วัน นับจากวันเปิดสัญญา ไม่ผูกกับวันเสาร์
+  // ช่วงแรกถึงกำหนดทันทีวันเปิด (หักล่วงหน้า) ช่วงถัดไปถึงกำหนดทุก 7 วัน
+  const start=d(c.start), out=[];
+  let from=1, k=1;
   while(from<=c.days && k<60){
-    const to=Math.min(c.days, from+inst-1);
-    out.push({k,date,from,to,inst:to-from+1,amount:Math.round((to-from+1)*c.daily)});
+    const to=Math.min(c.days, from+BLOCK-1);
+    out.push({k, date:iso(addDays(start,from-1)), from, to,
+              inst:to-from+1, amount:Math.round((to-from+1)*c.daily)});
     from=to+1; k++;
-    date=iso(addDays(first,7*(k-2))); inst=7;
   }
   return out;
+}
+function paidThrough(c,paid){                    // จ่ายครอบคลุมถึงวันไหนแล้ว
+  const n=Math.floor((paid||0)/c.daily);
+  return n>0 ? iso(addDays(d(c.start), n-1)) : null;
 }
 
 // ---------- สร้างสัญญา + ประวัติการจ่าย ----------
@@ -1347,7 +1347,7 @@ payments = SEEDED.slice();
 const BASE = contracts.slice();
 let dbContracts = [], apps = [];
 function rebuildContracts(){
-  // เลขที่สัญญาซ้ำกัน ให้ยึดของฐานข้อมูลเป็นหลัก กันนับซ้ำสองรอบ
+  // เลขที่สัญญาซ้ำกัน ให้ยึดของฐานข้อมูลเป็นหลัก กันนับซ้ำสองที่
   const fromDb=new Set(dbContracts.map(c=>String(c.no)));
   contracts = BASE.filter(c=>!fromDb.has(String(c.no))).concat(dbContracts);
 }
@@ -1370,7 +1370,7 @@ function custIdFor(o){                  // ลูกค้าเก่ากล�
 let DB=null, inbox=[], visits=[], handovers=[], dbOn=false;
 function syncLabel(txt,ok){const e=document.getElementById('syncState');
   e.textContent=txt; e.style.color=ok?'var(--ok)':'var(--muted)'}
-const roundOf = r => r.round_date || r.paid_at;   // รอบที่ปิดยอด (ของเก่าไม่มีก็ใช้วันรับเงิน)
+const roundOf = r => r.round_date || r.paid_at;   // วันที่ลงบัญชี (ของเก่าไม่มีก็ใช้วันรับเงิน)
 function rebuildPayments(){
   payments = SEEDED.concat(inbox.filter(r=>r.status==='approved')
     .map(r=>({no:r.contract_no,date:roundOf(r),paid:r.paid_at||roundOf(r),
@@ -1439,23 +1439,28 @@ function state(c){
   const principalPaid = paid*ratioP, interestPaid = paid-principalPaid;
   const instPaid = paid/c.daily;
   const rs = rounds(c);
-  const due = rs.filter(r=>d(r.date)<=TODAY).reduce((a,r)=>a+r.inst,0);
-  const behind = Math.max(0, Math.round(due-instPaid));
-  const behindRounds = Math.ceil(behind/7);
+  // จ่ายครอบคลุมถึงวันที่เท่าไหร่ของสัญญา (วันที่ 1 = วันเปิดสัญญา)
+  const covered = Math.floor(instPaid + 0.01);
+  const elapsed = Math.max(0, Math.min(c.days, dayDiff(TODAY, d(c.start))+1));
+  const behind = Math.max(0, elapsed - covered);            // ค้างกี่วัน
+  const due = elapsed;
+  const behindRounds = Math.ceil(behind/BLOCK);
+  // ไปเก็บครั้งหนึ่ง = เก็บให้ครอบคลุมอีก 7 วันนับจากวันนี้
+  const needDays = Math.max(0, Math.min(c.days, elapsed+BLOCK-1) - covered);
   let acc=0, next=null;
   for(const r of rs){ acc+=r.inst; if(!next && acc>instPaid+0.01) next=r }
   let st;
   if(c.voided) st='void';
   else if(paid>=c.total-0.5) st='closed';
   else if(d(c.start)>TODAY) st='pending';
-  else if(behind===0) st='ok';
-  else if(behindRounds<=1) st='watch';
+  else if(behind<=BLOCK) st='ok';          // ยังไม่ขาดนัดเก็บ (เก็บสัปดาห์ละครั้ง)
+  else if(behind<=BLOCK*2) st='watch';     // ขาดไปหนึ่งสัปดาห์
   else st='risk';
   const upcoming = rs.find(r=>d(r.date)>TODAY);
-  const isSat = TODAY.getDay()===SAT;
-  const collectNext = Math.min(c.total-paid,
-    behind*c.daily + (isSat||!upcoming ? 0 : upcoming.amount));
+  const collectNext = Math.max(0, Math.min(c.total-paid, Math.round(needDays*c.daily)));
+  const paidThru = covered>0 ? iso(addDays(d(c.start), covered-1)) : null;
   return {paid,principalPaid,interestPaid,instPaid,behind,behindRounds,due,st,rs,next,upcoming,collectNext,
+    covered,elapsed,needDays,paidThru,
     remain:c.total-paid, outstanding:c.amount-principalPaid, pct:Math.min(100,paid/c.total*100)};
 }
 // ---------- ประวัติลูกค้า (ผูกด้วยเบอร์โทร ถ้าไม่มีใช้ชื่อ) ----------
@@ -1463,7 +1468,7 @@ function custKey(x){
   const p=String(x.phone||'').replace(/\D/g,'');
   return p ? 'p:'+p : 'n:'+String(x.name||'').trim();
 }
-function lateRounds(c){                 // เคยปล่อยให้ค้างกี่รอบตลอดอายุสัญญา
+function lateRounds(c){                 // เคยค้างนานสุดกี่วันตลอดอายุสัญญา
   let due=0, late=0;
   for(const r of rounds(c)){
     if(d(r.date)>TODAY) break;
@@ -1489,10 +1494,10 @@ function custStats(key,excludeNo){
   let grade,cls;
   if(!list.length){ grade='ลูกค้าใหม่ · ยังไม่มีประวัติ'; cls='p-idle' }
   else if(openRisk){ grade='ไม่ควรปล่อยเพิ่ม · สัญญาเดิมยังค้างอยู่'; cls='p-bad' }
-  else if(maxLate===0){ grade='เครดิตดีมาก · จ่ายตรงทุกรอบ'; cls='p-ok' }
-  else if(maxLate<=1){ grade='เครดิตดี · เคยช้า 1 รอบ'; cls='p-ok' }
-  else if(maxLate<=3){ grade='ต้องระวัง · เคยช้า '+maxLate+' รอบ'; cls='p-warn' }
-  else { grade='เสี่ยงสูง · เคยช้า '+maxLate+' รอบ'; cls='p-bad' }
+  else if(maxLate===0){ grade='เครดิตดีมาก · จ่ายตรงเสมอ'; cls='p-ok' }
+  else if(maxLate<=1){ grade='เครดิตดี · เคยช้าเล็กน้อย'; cls='p-ok' }
+  else if(maxLate<=3){ grade='ต้องระวัง · เคยช้า '+maxLate+' วัน'; cls='p-warn' }
+  else { grade='เสี่ยงสูง · เคยช้า '+maxLate+' วัน'; cls='p-bad' }
   return {rows,list,closed,open,maxLate,interest,borrowed,grade,cls};
 }
 function custHistoryHTML(c){
@@ -1506,7 +1511,7 @@ function custHistoryHTML(c){
       <div class="hd"><span class="pill ${h.cls}">${h.grade}</span><span class="hint">${sum}</span></div>
       ${h.rows.length?`<div class="scroll"><table>
         <thead><tr><th>เลขที่สัญญา</th><th>ช่วงเวลา</th><th class="r">ยอดกู้</th>
-          <th class="r">เก็บได้</th><th class="r">รอบที่ช้า</th><th>สถานะ</th></tr></thead><tbody>`+
+          <th class="r">เก็บได้</th><th class="r">วันที่ช้า</th><th>สถานะ</th></tr></thead><tbody>`+
         h.rows.map(r=>`<tr class="clickable" data-go="${r.c.no}">
           <td class="mono">${r.c.no}</td><td>${thDate(r.c.start)} – ${thDate(r.c.end)}</td>
           <td class="r">${B(r.c.amount)}</td><td class="r">${B(r.s.paid)}</td>
@@ -1536,17 +1541,13 @@ function totals(){
 }
 
 // ---------- หน้าภาพรวม ----------
-function roundProgress(){          // ความคืบหน้าของรอบเก็บล่าสุด: เป้า / เก็บได้ / เหลือ
-  const rd=lastRoundDate();
+function roundProgress(){          // ความคืบหน้าของวันนี้: เป้า / เก็บได้ / เหลือ
+  const rd=iso(TODAY);
   let got=0,target=0,done=0,active=0;
   contracts.forEach(c=>{
-    const rs=rounds(c), row=rs.find(r=>r.date===rd);
-    if(!row) return;                                   // ยังไม่เริ่ม หรือจบไปก่อนรอบนี้
-    const dueBefore=rs.filter(r=>r.date<rd).reduce((a,r)=>a+r.inst,0);
-    const paidBefore=payments.filter(p=>p.no===c.no&&p.date<rd).reduce((a,p)=>a+p.amount,0);
-    const arrears=Math.max(0,Math.round(dueBefore*c.daily-paidBefore));
-    const tgt=Math.max(0,Math.min(row.amount+arrears, c.total-paidBefore));
+    const st=state(c); if(['closed','void','pending'].includes(st.st)) return;
     const rec=recOf(c.no)[rd], g=rec?rec.amount:0;
+    const tgt=Math.max(0, Math.round(st.collectNext)+g);   // ที่ต้องเก็บตอนเริ่มวัน
     if(tgt<=0 && g<=0) return;
     active++; target+=tgt; got+=g;
     if(g>=tgt-0.5) done++;
@@ -1559,13 +1560,13 @@ function renderDash(){
   const pct=p.target?Math.min(100,p.got/p.target*100):0;
   document.getElementById('dashRound').innerHTML=`
     <div class="hero">
-      <div class="lbl"><span>เก็บได้ในรอบเสาร์ที่ ${thDate(p.rd)}</span>
+      <div class="lbl"><span>เก็บได้วันที่ ${thDate(p.rd)}</span>
         <span>${p.done} / ${p.active} ราย</span></div>
       <div class="big">${B(p.got)}<small>/ ${B(p.target)}</small></div>
       <div class="prog"><i style="width:${pct}%"></i></div>
       <div class="foot"><span>เหลือเก็บอีก <b>${B(p.left)}</b></span>
-        <span>คิดเป็น <b>${pct.toFixed(0)}%</b> ของเป้ารอบนี้</span>
-        <span>ค่าใช้จ่ายรอบนี้ <b>${B(expenses.filter(e=>e.date>=p.rd).reduce((a,e)=>a+Number(e.amount||0),0))}</b></span></div>
+        <span>คิดเป็น <b>${pct.toFixed(0)}%</b> ของเป้าวันนี้</span>
+        <span>ค่าใช้จ่ายวันนี้ <b>${B(expenses.filter(e=>e.date>=p.rd).reduce((a,e)=>a+Number(e.amount||0),0))}</b></span></div>
     </div>`;
 
   const growth=CAPITAL?((t.assets-CAPITAL)/CAPITAL*100):0;
@@ -1584,7 +1585,7 @@ function renderDash(){
   const jobs=[];
   if(pendPay) jobs.push(['inbox',pendPay,'ยอดรออนุมัติ']);
   if(pendApp) jobs.push(['loan',pendApp,'คำขอลูกค้าใหม่']);
-  if(risky) jobs.push(['cust',risky,'ลูกค้าเสี่ยง ค้างเกิน 1 รอบ']);
+  if(risky) jobs.push(['cust',risky,'ลูกค้าเสี่ยง ค้างเกิน 14 วัน']);
   document.getElementById('dashTodo').innerHTML = jobs.length
     ? `<div class="todo">${jobs.map(([v,n,l])=>
         `<button data-jump="${v}"><b>${n}</b> ${l} →</button>`).join('')}</div>`
@@ -1664,7 +1665,7 @@ function renderChart(){
     g+=`<text x="${pad.l+i*bw+bw/2}" y="${H-8}" text-anchor="middle" font-size="10.5" fill="var(--muted)" font-family="IBM Plex Mono,monospace">${thShort(v.x)}</text>`;
   });
   document.getElementById('chartWrap').innerHTML =
-    `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="ยอดเก็บได้ 8 รอบล่าสุด">${g}</svg>`;
+    `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="ยอดเก็บได้ 8 ครั้งล่าสุด">${g}</svg>`;
 }
 
 function renderDue(){
@@ -1672,8 +1673,8 @@ function renderDue(){
     .filter(r=>['ok','watch','risk'].includes(r.s.st))
     .sort((a,b)=>b.s.behind-a.s.behind||b.c.daily-a.c.daily).slice(0,8);
   document.getElementById('dueTable').innerHTML =
-    `<thead><tr><th>ลูกค้า</th><th>สัญญา</th><th class="r">เก็บ/รอบ</th><th class="r">ค้าง (รอบ)</th>
-      <th class="r">ต้องเก็บรอบนี้</th><th>รอบที่ยังไม่ได้เก็บ</th><th>สถานะ</th></tr></thead><tbody>`+
+    `<thead><tr><th>ลูกค้า</th><th>สัญญา</th><th class="r">เก็บ/ครั้ง</th><th class="r">ค้าง (วัน)</th>
+      <th class="r">ต้องเก็บวันนี้</th><th>ค้างกี่วัน</th><th>สถานะ</th></tr></thead><tbody>`+
     rows.map(({c,s})=>`<tr><td>${esc(c.name)}</td><td class="mono">${c.no}</td>
       <td class="r">${B(c.daily*7)}</td><td class="r">${s.behindRounds||'—'}</td>
       <td class="r">${B(s.collectNext)}</td>
@@ -1715,7 +1716,7 @@ function renderCust(){
   if(keep) document.getElementById('cdHome').appendChild(keep);
   document.getElementById('custTable').innerHTML =
     `<thead><tr><th>รหัส</th><th>ลูกค้า</th><th>เลขที่สัญญา</th><th>แผน</th><th class="r">ยอดกู้</th>
-      <th class="r">ชำระมาแล้ว</th><th class="r">คงเหลือ</th><th>ความคืบหน้า</th><th class="r">ค้าง (รอบ)</th><th>สถานะ</th></tr></thead><tbody>`+
+      <th class="r">ชำระมาแล้ว</th><th class="r">คงเหลือ</th><th>ความคืบหน้า</th><th class="r">ค้าง (วัน)</th><th>สถานะ</th></tr></thead><tbody>`+
     (list.length?list.map(({c,s,others,closedN,openN,voidN})=>`<tr class="clickable ${selected===c.no?'sel':''}" data-no="${c.no}">
       <td class="mono">${c.id}</td><td>${esc(c.name)}</td>
       <td class="mono">${c.no}${tagOther(closedN,openN,voidN)}</td><td>${c.plan}</td>
@@ -1789,7 +1790,7 @@ function cePreview(){
   const match=contracts.find(x=>x.no!==c.no && String(x.phone||'').replace(/\D/g,'')===ph && ph.length>=9);
   document.getElementById('cePrev').innerHTML=`
     <div>ค่างวด <b>${B(daily)}</b> /วัน</div>
-    <div>เก็บทุกเสาร์ <b>${B(daily*7)}</b></div>
+    <div>งวดละ <b>${B(daily*7)}</b> (7 วัน)</div>
     <div>ดอกเบี้ยรวม <b>${B(interest)}</b></div>
     <div>ต้องเก็บรวม <b>${B(total)}</b></div>
     <div>หักงวดแรก <b>${B(up)}</b></div>
@@ -1880,13 +1881,13 @@ function renderDetail(){
     <div><div class="k">เบอร์โทร</div><div class="v mono" style="font-size:15px">${c.phone}</div></div>
     <div><div class="k">ยอดกู้ / ต้องจ่ายรวม</div><div class="v">${B(c.amount)} / ${B(c.total)}</div></div>
     <div><div class="k">หักงวดแรก / รับเงินจริง</div><div class="v">${B(c.upfront||0)} / ${B(c.amount-(c.upfront||0))}</div></div>
-    <div><div class="k">เก็บทุกวันเสาร์</div><div class="v">${B(c.daily*7)} × ${Math.ceil(c.days/7)} รอบ</div></div>
+    <div><div class="k">งวดละ (7 วัน)</div><div class="v">${B(c.daily*7)} × ${Math.ceil(c.days/7)} ครั้ง</div></div>
     <div><div class="k">เก็บได้แล้ว</div><div class="v">${B(s.paid)}</div></div>
     <div><div class="k">คงเหลือต้องเก็บ</div><div class="v">${B(s.remain)}</div></div>
     <div><div class="k">กำไรที่รับรู้แล้ว</div><div class="v">${B(s.interestPaid)}</div></div>
     <div><div class="k">วันเริ่ม – วันหมดสัญญา</div><div class="v" style="font-size:14px">${thDate(c.start)} – ${thDate(c.end)}</div></div>
-    <div><div class="k">สถานะ</div><div class="v">${pill(s.st)}${s.behindRounds?` <span class="mono" style="font-size:13px">ค้าง ${s.behindRounds} รอบ</span>`:''}</div></div>
-    <div><div class="k">ต้องเก็บรอบนี้</div><div class="v">${s.st==='closed'?'—':B(s.collectNext)}</div></div>
+    <div><div class="k">สถานะ</div><div class="v">${pill(s.st)}${s.behindRounds?` <span class="mono" style="font-size:13px">ค้าง ${s.behind} วัน</span>`:''}</div></div>
+    <div><div class="k">ต้องเก็บวันนี้</div><div class="v">${s.st==='closed'?'—':B(s.collectNext)}</div></div>
     ${photoTotal(c.photos)?`<div style="grid-column:1/-1">
       <div class="k">รูปประกอบสัญญา (${photoTotal(c.photos)} รูป)</div>
       <div class="app" style="margin:6px 0 0">${thumbsHTML(c.photos)}</div></div>`:''}
@@ -1902,7 +1903,7 @@ function renderDetail(){
   const ps = payments.filter(p=>p.no===c.no).sort((a,b)=>b.date.localeCompare(a.date));
   const rp = c.amount/c.total;
   document.getElementById('cdHistory').innerHTML =
-    `<thead><tr><th>วันรับเงินจริง</th><th>รอบที่ปิดยอด</th><th class="r">ยอดที่เก็บได้</th><th class="r">ตัดเงินต้น</th><th class="r">กำไร (ดอก)</th><th class="r">คิดเป็นงวด</th></tr></thead><tbody>`+
+    `<thead><tr><th>วันรับเงินจริง</th><th>วันที่ลงบัญชี</th><th class="r">ยอดที่เก็บได้</th><th class="r">ตัดเงินต้น</th><th class="r">กำไร (ดอก)</th><th class="r">คิดเป็นวัน</th></tr></thead><tbody>`+
     (ps.length?ps.map(p=>`<tr><td>${thDate(p.paid||p.date)}</td>
       <td style="color:var(--muted)">${thDate(p.date)}</td><td class="r">${B(p.amount)}</td>
       <td class="r">${B(p.amount*rp)}</td><td class="r">${B(p.amount*(1-rp))}</td>
@@ -1932,15 +1933,15 @@ function collectPreview(){
   if(!c){box.innerHTML='';return}
   const s=state(c), amt=Number(document.getElementById('cAmt').value)||0;
   const use=Math.min(amt,s.remain), rp=c.amount/c.total;
-  box.innerHTML=`<div>เก็บต่อรอบ <b>${B(c.daily*7)}</b></div>
-    <div>คิดเป็น <b>${(use/c.daily/7).toFixed(2)}</b> รอบ (${(use/c.daily).toFixed(1)} งวด)</div>
+  box.innerHTML=`<div>งวดละ <b>${B(c.daily*7)}</b></div>
+    <div>คิดเป็น <b>${(use/c.daily).toFixed(1)}</b> วัน</div>
     <div>ตัดเงินต้น <b>${B(use*rp)}</b></div>
     <div>กำไร (ดอก) <b>${B(use*(1-rp))}</b></div>
     <div>คงเหลือหลังจ่าย <b>${B(s.remain-use)}</b></div>`;
   note.textContent = amt>s.remain
     ? `ยอดเกินที่ค้างอยู่ ระบบจะบันทึกแค่ ${B(s.remain)} บาท แล้วปิดสัญญา`
-    : s.behindRounds ? `สัญญานี้ค้าง ${s.behindRounds} รอบ (${B(s.behind*c.daily)} บาท) · ต้องเก็บรอบนี้ ${B(s.collectNext)} บาท`
-    : `จ่ายตรงทุกรอบ · ต้องเก็บรอบนี้ ${B(s.collectNext)} บาท`;
+    : s.behind ? `สัญญานี้ค้าง ${s.behind} วัน (${B(s.behind*c.daily)} บาท) · ต้องเก็บวันนี้ ${B(s.collectNext)} บาท = ${+(s.collectNext/c.daily).toFixed(2)} วัน × ${B(c.daily)}`
+    : `จ่ายตรงเสมอ · ต้องเก็บวันนี้ ${B(s.collectNext)} บาท`;
 }
 document.getElementById('cSel').onchange=collectPreview;
 document.getElementById('cAmt').oninput=collectPreview;
@@ -1968,8 +1969,8 @@ function renderLedger(){
   const rows=payments.map(p=>{const c=contracts.find(x=>x.no===p.no);return {...p,c}})
     .sort((a,b)=>b.date.localeCompare(a.date)).slice(0,30);
   document.getElementById('ledgerTable').innerHTML =
-    `<thead><tr><th>รอบที่ปิดยอด</th><th>ชื่อลูกค้า</th><th>เลขที่สัญญา</th><th class="r">ยอดที่เก็บได้</th>
-      <th class="r">ตัดเงินต้น</th><th class="r">กำไร (ดอก)</th><th class="r">จ่ายแล้ว/งวด</th><th class="r">ค้าง (รอบ)</th></tr></thead><tbody>`+
+    `<thead><tr><th>วันที่ลงบัญชี</th><th>ชื่อลูกค้า</th><th>เลขที่สัญญา</th><th class="r">ยอดที่เก็บได้</th>
+      <th class="r">ตัดเงินต้น</th><th class="r">กำไร (ดอก)</th><th class="r">จ่ายแล้ว/วัน</th><th class="r">ค้าง (วัน)</th></tr></thead><tbody>`+
     rows.map(r=>{const s=state(r.c),rp=r.c.amount/r.c.total;
       return `<tr><td>${thDate(r.date)}</td><td>${esc(r.c.name)}</td><td class="mono">${r.c.no}</td>
         <td class="r">${B(r.amount)}</td><td class="r">${B(r.amount*rp)}</td><td class="r">${B(r.amount*(1-rp))}</td>
@@ -2007,13 +2008,13 @@ function loanPreview(){
   const up=upfrontOf(uMode,r.daily,r.days,iso(start),document.getElementById('nUpfAmt').value), out=amt-up;
   document.getElementById('nSplit').innerHTML=`<div>เลขที่สัญญา <b>${nextContractNo()}</b></div>
     <div>ค่างวด <b>${B(r.daily)}</b> /วัน</div>
-    <div>เก็บทุกเสาร์ <b>${B(r.daily*7)}</b> × ${nr} รอบ</div>
+    <div>งวดละ <b>${B(r.daily*7)}</b> × ${nr} ครั้ง</div>
     <div>ดอกเบี้ยรวม <b>${B(r.interest)}</b></div>
     <div>ต้องเก็บรวม <b>${B(amt+r.interest)}</b></div>
     <div style="background:var(--accent-soft);color:var(--accent)">หักงวดแรก <b>${B(up)}</b></div>
     <div style="background:var(--accent);color:#fff">จ่ายให้ลูกค้าจริง <b>${B(out)}</b></div>
-    <div>เก็บรอบแรก <b>${thDate(first)}</b></div>
-    <div>รอบสุดท้าย <b>${thDate(addDays(first,7*(nr-1)))}</b></div>`;
+    <div>เก็บครั้งแรก <b>${thDate(first)}</b></div>
+    <div>ครั้งสุดท้าย <b>${thDate(addDays(first,7*(nr-1)))}</b></div>`;
   const nUn=document.getElementById('nUpfNote');
   nUn.hidden = uMode!=='custom' || !up;
   nUn.textContent = upfrontNote(up,r.daily,r.days,iso(start));
@@ -2041,7 +2042,7 @@ document.getElementById('nSave').onclick=async()=>{
   if(!c){t.hidden=false;t.style.color='var(--bad)';t.textContent='เปิดสัญญาไม่สำเร็จ · '+(lastDbError||'ลองอีกครั้ง');return}
   document.getElementById('nName').value='';document.getElementById('nPhone').value='';
   t.hidden=false;t.style.color='var(--ok)';
-  t.textContent=`เปิดสัญญา ${c.no} ให้ ${name} แล้ว · เก็บเสาร์ละ ${B(c.daily*7)} บาท`;
+  t.textContent=`เปิดสัญญา ${c.no} ให้ ${name} แล้ว · งวดละ ${B(c.daily*7)} บาท (7 วัน)`;
   renderAll();
 };
 
@@ -2123,8 +2124,8 @@ document.getElementById('eSave').onclick=async()=>{
 // ---------- เรท ----------
 function renderRate(){
   document.getElementById('rateTable').innerHTML=
-    `<thead><tr><th>แผน</th><th class="r">ยอดกู้</th><th class="r">ผ่อนวันละ</th><th class="r">เก็บทุกเสาร์</th>
-      <th class="r">จำนวนรอบ</th><th class="r">ดอกเบี้ยรวม</th><th class="r">เก็บรวมทั้งสัญญา</th><th class="r">คิดเป็น</th></tr></thead><tbody>`+
+    `<thead><tr><th>แผน</th><th class="r">ยอดกู้</th><th class="r">ผ่อนวันละ</th><th class="r">งวดละ (7 วัน)</th>
+      <th class="r">จำนวนครั้ง</th><th class="r">ดอกเบี้ยรวม</th><th class="r">เก็บรวมทั้งสัญญา</th><th class="r">คิดเป็น</th></tr></thead><tbody>`+
     RATES.map(r=>`<tr><td>${r.plan}</td><td class="r">${B(r.amount)}</td><td class="r">${B(r.daily)}</td>
       <td class="r">${B(r.daily*7)}</td><td class="r">${Math.ceil(r.days/7)}</td>
       <td class="r">${B(r.interest)}</td><td class="r">${B(r.amount+r.interest)}</td>
@@ -2135,8 +2136,8 @@ function calcRate(){
   const amt=Number(document.getElementById('calcAmt').value)||0;
   const r=rateFor(amt,document.getElementById('calcPlan').value);
   document.getElementById('calcOut').innerHTML=`<div>ผ่อนวันละ <b>${B(r.daily)}</b></div>
-    <div>เก็บทุกเสาร์ <b>${B(r.daily*7)}</b></div>
-    <div>จำนวนรอบ <b>${Math.ceil(r.days/7)}</b></div><div>ดอกเบี้ยรวม <b>${B(r.interest)}</b></div>
+    <div>งวดละ <b>${B(r.daily*7)}</b> (7 วัน)</div>
+    <div>จำนวนครั้ง <b>${Math.ceil(r.days/7)}</b></div><div>ดอกเบี้ยรวม <b>${B(r.interest)}</b></div>
     <div>เก็บรวม <b>${B(amt+r.interest)}</b></div>
     <div>เก็บครบวันที่ <b>${thDate(addDays(satFrom(addDays(TODAY,1)),7*(Math.ceil(r.days/7)-1)))}</b></div>`;
 }
@@ -2213,10 +2214,10 @@ function renderInbox(){
     <div class="tile ${pend.length?'hero':''}"><div class="k">รออนุมัติ</div><div class="v">${B(sum(pend))}</div><div class="s">${pend.length} รายการ</div></div>
     <div class="tile"><div class="k">อนุมัติแล้ว</div><div class="v">${B(sum(appr))}</div><div class="s">${appr.length} รายการ · เข้าบัญชีแล้ว</div></div>
     <div class="tile"><div class="k">เก็บไม่ได้</div><div class="v">${visits.length}</div><div class="s">บันทึกจากการเดินเก็บ</div></div>
-    <div class="tile"><div class="k">ปิดรอบนำส่ง</div><div class="v">${handovers.length}</div><div class="s">ครั้ง</div></div>`;
+    <div class="tile"><div class="k">ยอดนำส่ง</div><div class="v">${handovers.length}</div><div class="s">ครั้ง</div></div>`;
 
   document.getElementById('pendTable').innerHTML=
-    `<thead><tr><th>วันที่รับเงิน</th><th>รอบที่ปิดยอด</th><th>บันทึกเมื่อ</th><th>ลูกค้า</th><th>สัญญา</th><th class="r">ยอด</th><th class="r">คิดเป็นงวด</th>
+    `<thead><tr><th>วันที่รับเงิน</th><th>วันที่ลงบัญชี</th><th>บันทึกเมื่อ</th><th>ลูกค้า</th><th>สัญญา</th><th class="r">ยอด</th><th class="r">คิดเป็นวัน</th>
       <th>ผู้เก็บ</th><th>หมายเหตุ</th><th></th></tr></thead><tbody>`+
     (pend.length?pend.map(r=>`<tr>
       <td>${r.paid_at?thDate(r.paid_at):'—'}</td>
@@ -2233,7 +2234,7 @@ function renderInbox(){
 
   const seen=appr.slice().sort((a,b)=>String(roundOf(b)).localeCompare(String(roundOf(a)))).slice(0,80);
   document.getElementById('apprTable').innerHTML=
-    `<thead><tr><th>วันที่รับเงิน</th><th>รอบที่ปิดยอด</th><th>ลูกค้า</th><th>สัญญา</th>
+    `<thead><tr><th>วันที่รับเงิน</th><th>วันที่ลงบัญชี</th><th>ลูกค้า</th><th>สัญญา</th>
       <th class="r">ยอด</th><th>ผู้เก็บ</th><th>หมายเหตุ</th><th></th></tr></thead><tbody>`+
     (seen.length?seen.map(r=>{
       const ed = editRow && editRow.coll==='collections' && editRow.id===r.id;
@@ -2295,10 +2296,10 @@ function renderInbox(){
        <td class="r">${h.fuel?B(h.fuel):'—'}</td>
        <td class="r">${h.other?B(h.other)+(h.other_item?' ('+esc(h.other_item)+')':''):'—'}</td>
        <td class="r">${B(h.net!=null?h.net:(h.total||0))}</td><td>${esc(h.note||'—')}</td></tr>`).join('')
-     :`<tr><td colspan="8" style="color:var(--muted)">ยังไม่มีการปิดรอบ</td></tr>`)+'</tbody>';
+     :`<tr><td colspan="8" style="color:var(--muted)">ยังไม่มีการนำส่ง</td></tr>`)+'</tbody>';
 }
 const SHOTS={id:'บัตรประชาชน',home:'รูปบ้าน',shop:'รูปร้าน'};
-function isBackdated(r){            // ย้อนหลัง = ลงเข้ารอบที่ปิดไปแล้ว
+function isBackdated(r){            // ย้อนหลัง = ลงเข้าวันที่ผ่านไปแล้ว
   return roundOf(r) < lastRoundDate();
 }
 function thumb(url,label){
@@ -2341,11 +2342,11 @@ function appPreviewRow(card){
   const up=upfrontOf(v.upfront_mode,r.daily,r.days,v.start,v.upfront_amt), out=v.amt-up;
   card.querySelector('[data-out]').innerHTML=`<div>เลขที่สัญญา <b>${nextContractNo()}</b></div>
     <div>ผ่อนวันละ <b>${B(r.daily)}</b> × ${r.days} วัน</div>
-    <div>เก็บทุกเสาร์ <b>${B(r.daily*7)}</b> × ${nr} รอบ</div>
+    <div>งวดละ <b>${B(r.daily*7)}</b> × ${nr} ครั้ง</div>
     <div>ต้องเก็บรวม <b>${B(v.amt+r.interest)}</b> (กำไร ${B(r.interest)})</div>
     <div style="background:var(--accent-soft);color:var(--accent)">หักงวดแรก <b>${B(up)}</b></div>
     <div style="background:var(--accent);color:#fff">จ่ายให้ลูกค้าจริง <b>${B(out)}</b></div>
-    <div>รอบแรก <b>${thDate(first)}</b></div>
+    <div>ครั้งแรก <b>${thDate(first)}</b></div>
     <div style="color:${out>cash?'var(--bad)':'var(--muted)'}">${out>cash
       ? 'เงินสดมี '+B(cash)+' ไม่พอปล่อย' : 'ปล่อยแล้วเหลือ '+B(cash-out)}</div>
     ${v.upfront_mode==='custom'&&up?`<div style="grid-column:1/-1;color:var(--accent)">${upfrontNote(up,r.daily,r.days,v.start)}</div>`:''}`;
@@ -2462,12 +2463,12 @@ function calDays(c,tappable){
     const x=addDays(start,i), k=iso(x), rec=recs[k], sat=x.getDay()===SAT, future=x>TODAY;
     const cls=(rec?(rec.status==='pending'?'pend':'appr'):(future?'off':''))+(sat?' sat':'');
     g+=`<div class="d ${cls}" ${tappable&&sat&&!future?`data-tick="${c.no}|${k}|${roundAmountOn(c,k)}"`:''}
-      title="งวดที่ ${i+1} · ${thDate(k)}${sat?' · วันเก็บเงิน':''}"><b>${x.getDate()}</b>
+      title="วันที่ ${i+1} · ${thDate(k)}${sat?' · วันเก็บเงิน':''}"><b>${x.getDate()}</b>
       <i>${rec?'✓':i+1}</i></div>`;
   }
   return `<div class="cald">${g}</div>`;
 }
-function roundView(c){                       // สรุปรายรอบ: ต้องเก็บ / เก็บได้ / ขาด
+function roundView(c){                       // สรุปทุก 7 วัน: ต้องเก็บ / เก็บได้ / ขาด
   const recs=recOf(c.no);
   return rounds(c).map(r=>{
     const rec=recs[r.date]||null, got=rec?rec.amount:0;
@@ -2476,7 +2477,7 @@ function roundView(c){                       // สรุปรายรอบ: 
   });
 }
 const RST={full:['เก็บครบ','p-ok'],part:['เก็บไม่ครบ','p-warn'],
-           none:['ยังไม่เก็บ','p-bad'],future:['ยังไม่ถึงรอบ','p-idle']};
+           none:['ยังไม่เก็บ','p-bad'],future:['ยังไม่ถึงกำหนด','p-idle']};
 function calHTML(c,tappable){
   let g='';
   roundView(c).forEach(r=>{
@@ -2485,20 +2486,20 @@ function calHTML(c,tappable){
       : r.rec ? (r.rec.status==='pending'?'pend':'appr') : (future?'off':'');
     const tick = tappable && !future && (!r.rec || r.rec.status==='pending');
     g+=`<div class="d ${cls}" ${tick?`data-tick="${c.no}|${r.date}|${r.amount}"`:''}
-      title="รอบ ${r.k} · เสาร์ที่ ${thDate(r.date)} · งวด ${r.from}-${r.to} · ${RST[r.st][0]}">
-      <u>รอบ ${r.k}</u><b>${thShort(x)}</b>
+      title="วันที่ ${r.from}-${r.to} · เริ่ม ${thDate(r.date)} · ${RST[r.st][0]}">
+      <u>วัน ${r.from}-${r.to}</u><b>${thShort(x)}</b>
       <i>${r.st==='full'?'✓ '+B(r.got):r.st==='part'?B(r.got)+'/'+B(r.amount):B(r.amount)}</i></div>`;
   });
   return `<div class="cal">${g}</div>`;
 }
 function roundsTableHTML(c,tappable){
   const rs=roundView(c);
-  return `<thead><tr><th>รอบ</th><th>วันเสาร์ที่</th><th class="r">ต้องเก็บ</th>
+  return `<thead><tr><th>ช่วงวันที่</th><th>ถึงกำหนด</th><th class="r">ต้องเก็บ</th>
     <th class="r">เก็บได้</th><th class="r">ขาด</th><th class="r">ครั้งที่รับ</th><th>สถานะ</th></tr></thead><tbody>`+
     rs.map(r=>{
       const tick=tappable && r.st!=='future' && (!r.rec || r.rec.status==='pending');
       return `<tr ${tick?`class="clickable" data-tick="${c.no}|${r.date}|${r.amount}"`:''}>
-      <td class="mono">${r.k}</td><td>${thDate(r.date)}</td>
+      <td class="mono">${r.from}–${r.to}</td><td>${thDate(r.date)}</td>
       <td class="r">${B(r.amount)}</td><td class="r">${r.got?B(r.got):'—'}</td>
       <td class="r" style="${r.short&&r.st!=='future'?'color:var(--warn);font-weight:600':''}">${
         r.st==='future'?'—':r.short?B(r.short):'—'}</td>
@@ -2527,10 +2528,10 @@ async function tick(key){
   const amt=Math.min(Number(amtStr)||c.daily*7, Math.round(state(c).remain));
   const res=await dbAdd('collections',{contract_no:no,customer:c.name,amount:amt,
     installments:Number((amt/c.daily).toFixed(2)),
-    paid_at:date, round_date:date, collector:collector(),note:'ติ๊กรอบเสาร์',status:'pending',
+    paid_at:date, round_date:date, collector:collector(),note:'ติ๊กจากตาราง',status:'pending',
     backdated:date<lastRoundDate(), created_at:new Date().toISOString()}, inbox);
   if(res!==true){ ftoast('ส่งไม่สำเร็จ ลองอีกครั้ง',false); return }
-  ftoast('ติ๊กเก็บรอบ '+thDate(date)+' · '+B(amt)+' บาท',true);
+  ftoast('ติ๊กเก็บวันที่ '+thDate(date)+' · '+B(amt)+' บาท',true);
   renderAll();
 }
 
@@ -2577,14 +2578,14 @@ function openSlip(no){
       ${s.st==='closed'
         ? `<div class="next done"><b>ชำระครบตามสัญญาแล้ว ขอบคุณครับ</b></div>`
         : next
-          ? `<div class="next"><span>ชำระครั้งถัดไป<br>เสาร์ที่ ${thDate(next.date)}${
-              s.behindRounds?' · รวมค้าง '+s.behindRounds+' รอบ':''}</span><b>${B(need)}</b></div>`
+          ? `<div class="next"><span>ชำระครั้งถัดไป<br>${thDate(next.date)}${
+              s.behindRounds?' · รวมค้าง '+s.behind+' วัน':''}</span><b>${B(need)}</b></div>`
           : `<div class="next"><span>ครบกำหนดสัญญาแล้ว<br>กรุณาติดต่อเจ้าหน้าที่</span><b>${B(s.remain)}</b></div>`}
 
       <div class="rows">รายการชำระล่าสุด</div>
       <table><thead><tr><th>วันที่ชำระ</th><th class="r">จำนวนเงิน</th><th class="r">วัน</th></tr></thead>
       <tbody>${shown.map(p=>`<tr><td>${thDate(p.paid||p.date)}${(p.paid&&p.paid!==p.date)
-          ?`<span style="color:#6b7b80"> · รอบ ${thDate(p.date)}</span>`:''}</td>
+          ?`<span style="color:#6b7b80"> · ลงบัญชี ${thDate(p.date)}</span>`:''}</td>
         <td class="r">${B(p.amount)}</td>
         <td class="r">${(p.amount/c.daily).toFixed(0)}</td></tr>`).join('')
         || '<tr><td colspan="3" style="color:#6b7b80">ยังไม่มีรายการชำระ</td></tr>'}</tbody>
@@ -2605,10 +2606,10 @@ function slipText(c){
     'ชื่อ: '+c.name, 'สัญญา: '+c.no,
     'ยอดกู้: '+B(c.amount)+' บาท · ผ่อนวันละ '+B(c.daily)+' บาท',
     'เริ่มสัญญา: '+thDate(c.start)+' · หมดสัญญา: '+thDate(c.end),
-    'ชำระมาแล้ว: '+B(s.paid)+' บาท ('+Math.floor(s.instPaid)+'/'+c.days+' งวด)',
+    'ชำระมาแล้ว: '+B(s.paid)+' บาท ('+Math.floor(s.instPaid)+'/'+c.days+' วัน)',
     'คงเหลือ: '+B(s.remain)+' บาท'];
   if(s.st!=='closed') L.push(next
-    ? 'ชำระครั้งถัดไป: '+B(need)+' บาท กำหนดเสาร์ที่ '+thDate(next.date)
+    ? 'ชำระครั้งถัดไป: '+B(need)+' บาท กำหนด '+thDate(next.date)
     : 'ครบกำหนดสัญญาแล้ว ยอดค้าง '+B(s.remain)+' บาท');
   if(s.st==='closed') L.push('สถานะ: ชำระครบตามสัญญาแล้ว');
   if(ps.length){ L.push('','ชำระล่าสุด:');
@@ -2705,20 +2706,20 @@ function openCard(no){
       </div>
       <div class="pbar"><i style="width:${s.pct}%"></i></div>
       ${s.st!=='closed'?`<div class="nextline">ต้องเก็บครั้งถัดไป <b>${B(Math.round(s.collectNext))}</b>
-        ${next?'· เสาร์ที่ '+thDate(next.date):'· เลยกำหนดสัญญาแล้ว'}
-        ${s.behindRounds?'<span class="backtag">ค้าง '+s.behindRounds+' รอบ</span>':''}</div>`:''}
+        ${next?'· ครั้งถัดไป '+thDate(next.date):'· เลยกำหนดสัญญาแล้ว'}
+        ${s.behindRounds?'<span class="backtag">ค้าง '+s.behind+' วัน</span>':''}</div>`:''}
       <div class="facts">
         <span>ยอดกู้ <b>${B(c.amount)}</b></span>
         <span>ผ่อนวันละ <b>${B(c.daily)}</b></span>
-        <span>เก็บทุกเสาร์ <b>${B(c.daily*7)}</b></span>
+        <span>งวดละ <b>${B(c.daily*7)}</b></span>
         <span>ต้องเก็บรวม <b>${B(c.total)}</b></span>
         <span>${c.plan}</span>
         <span>${thDate(c.start)} – ${thDate(c.end)}</span>
       </div>
     </div>
-    <div class="subhead">รอบเก็บเงิน · แตะแถวเพื่อบันทึกว่าเก็บรอบนั้นแล้ว</div>
+    <div class="subhead">ตารางจ่ายทุก 7 วัน · แตะแถวเพื่อบันทึกว่าเก็บช่วงนั้นแล้ว</div>
     <div class="scroll"><table>${roundsTableHTML(c,true)}</table></div>
-    <details class="daybox"><summary>ดูปฏิทินรายวันทั้ง ${c.days} งวด</summary>
+    <details class="daybox"><summary>ดูปฏิทินรายวันทั้ง ${c.days} วัน</summary>
       <div style="padding:0 14px 14px">${calDays(c,false)}</div></details>`;
   document.getElementById('cardSheet').hidden=false;
   bindTicks();
@@ -2733,7 +2734,7 @@ function printableCard(c){
   let cells='';
   for(let i=0;i<c.days;i++){
     const x=addDays(start,i), rec=recs[iso(x)], sat=x.getDay()===SAT;
-    cells+=`<div class="cell${rec?' on':''}${sat?' sat':''}"><u>งวด ${i+1}</u>
+    cells+=`<div class="cell${rec?' on':''}${sat?' sat':''}"><u>วัน ${i+1}</u>
       <s>${x.getDate()}/${x.getMonth()+1}</s><em>${rec?'&#10003;':''}</em></div>`;
   }
   return `<!doctype html><html lang="th"><head><meta charset="utf-8">
@@ -2764,19 +2765,19 @@ table.info td.k{background:#f2f2f2;width:22%;color:#444;font-size:8pt}
 @media print{.tip{display:none}}
 </style></head><body>
 <div class="tip">กด Ctrl+P (หรือ Cmd+P) เพื่อสั่งปริ้นการ์ดนี้ · ขนาดกระดาษ A5</div>
-<h1>การ์ดผ่อนชำระ · เก็บทุกวันเสาร์</h1>
+<h1>การ์ดผ่อนชำระ</h1>
 <div class="sub">เลขที่สัญญา ${c.no} · พิมพ์เมื่อ ${thDate(TODAY)}</div>
 <table class="info">
 <tr><td class="k">ชื่อลูกค้า</td><td><b>${esc(c.name)}</b></td><td class="k">เบอร์โทร</td><td>${esc(c.phone)}</td></tr>
 <tr><td class="k">ยอดกู้</td><td>${B(c.amount)} บาท${c.upfront?' (หักงวดแรก '+B(c.upfront)+' รับจริง '+B(c.amount-c.upfront)+')':''}</td>
     <td class="k">แผนผ่อน</td><td>${c.plan}</td></tr>
-<tr><td class="k">ผ่อนวันละ</td><td>${B(c.daily)} บาท</td><td class="k">เก็บทุกวันเสาร์</td><td><b>${B(c.daily*7)} บาท</b></td></tr>
+<tr><td class="k">ผ่อนวันละ</td><td>${B(c.daily)} บาท</td><td class="k">งวดละ (7 วัน)</td><td><b>${B(c.daily*7)} บาท</b></td></tr>
 <tr><td class="k">วันเริ่มสัญญา</td><td>${thDate(c.start)}</td><td class="k">ต้องเก็บรวม</td><td>${B(c.total)} บาท</td></tr>
-<tr><td class="k">จ่ายมาแล้ว</td><td>${Math.floor(s.instPaid)}/${c.days} งวด (${B(s.paid)} บาท)</td>
+<tr><td class="k">จ่ายมาแล้ว</td><td>${Math.floor(s.instPaid)}/${c.days} วัน (${B(s.paid)} บาท)</td>
     <td class="k">คงเหลือ</td><td><b>${B(s.remain)} บาท</b></td></tr>
 </table>
 <div class="grid">${cells}</div>
-<div class="hint">ช่องกรอบเข้ม = วันเสาร์ วันที่ผู้เก็บเงินเข้าเก็บ (รอบละ 7 งวด) · ช่องที่มีเครื่องหมายถูกคือเก็บแล้ว
+<div class="hint">ช่องกรอบเข้ม = วันที่ถึงกำหนดจ่าย (ทุก 7 วัน) · ช่องที่มีเครื่องหมายถูกคือเก็บแล้ว
 ช่องที่เหลือให้เซ็นกำกับทุกครั้งที่รับเงิน</div>
 <div class="foot"><span class="sign">ลงชื่อผู้กู้</span><span class="sign">ลงชื่อผู้เก็บเงิน</span></div>
 </body></html>`;
@@ -2801,25 +2802,23 @@ function todayRows(){ const dt=fieldDate();
   return inbox.filter(r=>roundOf(r)===dt && r.status!=='rejected') }
 function renderField(){
   const dt=fieldDate(), rows=todayRows();
-  const isSat=d(dt).getDay()===SAT, last=lastRoundDate();
-  const back=Math.round(dayDiff(d(last),d(dt))/7);
+  const last=iso(TODAY);
+  const back=Math.max(0, dayDiff(d(last),d(dt)));
   document.getElementById('fDateLabel').innerHTML = 'วันนี้ '+thDate(TODAY)+' · ผู้เก็บ '+esc(collector());
   const warn=document.getElementById('rWarn');
   if(dt>iso(TODAY)){
-    warn.hidden=false; warn.textContent='รอบนี้ยังมาไม่ถึง · บันทึกล่วงหน้าไม่ได้';
+    warn.hidden=false; warn.textContent='วันนี้ยังมาไม่ถึง · บันทึกล่วงหน้าไม่ได้';
   } else if(back>0){
     warn.hidden=false;
-    warn.textContent='กำลังลงบันทึกย้อนหลัง '+back+' รอบ (เสาร์ที่ '+thDate(dt)+') ทุกรายการที่บันทึกจะลงวันที่นี้';
-  } else if(!isSat){
-    warn.hidden=false; warn.textContent='วันที่นี้ไม่ใช่วันเสาร์ · จะบันทึกเป็นรอบพิเศษนอกรอบปกติ';
+    warn.textContent='กำลังลงบันทึกย้อนหลัง '+back+' วัน ('+thDate(dt)+') ทุกรายการที่บันทึกจะลงวันที่นี้';
   } else warn.hidden=true;
   document.getElementById('rNext').disabled = dt>=last;
   const got=rows.reduce((a,r)=>a+(Number(r.amount)||0),0);
   const list = contracts.map(c=>({c,s:state(c)})).filter(({s})=>['ok','watch','risk'].includes(s.st));
   const target = list.reduce((a,{s})=>a+s.collectNext,0);
   const waiting=rows.filter(r=>r.status==='pending');
-  document.getElementById('fSum').innerHTML=`<div class="k">เก็บได้รอบนี้</div><div class="big">${B(got)}</div>
-    <div class="row"><span>${rows.length} / ${list.length} ราย</span><span>ต้องเก็บรอบนี้ ${B(target)}</span>
+  document.getElementById('fSum').innerHTML=`<div class="k">เก็บได้วันนี้</div><div class="big">${B(got)}</div>
+    <div class="row"><span>${rows.length} / ${list.length} ราย</span><span>ต้องเก็บวันนี้ ${B(target)}</span>
     <span>${waiting.length?'รอเจ้าของอนุมัติ '+waiting.length+' รายการ':'อนุมัติครบแล้ว'}</span></div>`;
   document.getElementById('fCash').textContent=B(got);
 
@@ -2838,23 +2837,26 @@ function renderField(){
     return `<div class="fcard ${mine.length?'done':''}">
       <div class="top" data-open="${c.no}">
         <div class="who"><b>${esc(c.name)}</b><small>${c.no} · ${c.phone}</small>
-          <div style="margin-top:5px">${pill(s.st)}${s.behindRounds?` <span class="fmini">ค้าง ${s.behindRounds} รอบ (${B(s.behind*c.daily)})</span>`:''}
+          <div style="margin-top:5px">${pill(s.st)}
+          <span class="fmini">จ่ายถึง ${s.paidThru?thDate(s.paidThru):'ยังไม่จ่าย'}</span>${
+            s.behind?` <span class="fmini" style="color:var(--bad)">ค้าง ${s.behind} วัน = ${B(s.behind*c.daily)}</span>`:''}
           ${mine.length?(()=>{
             const need=Math.round(s.collectNext), lack=Math.max(0,need-got);
             const wait=mine.some(r=>r.status==='pending')?' · รออนุมัติ':'';
             return lack
-              ? `<div class="ok-mark" style="color:var(--warn)">เก็บได้ ${B(got)} / ${B(need)} · ขาด ${B(lack)}${wait}</div>`
+              ? `<div class="ok-mark" style="color:var(--warn)">เก็บได้ ${B(got)} / ${B(need)} · ขาด ${B(lack)} (${+(lack/c.daily).toFixed(2)} วัน)${wait}</div>`
               : `<div class="ok-mark">เก็บครบ ${B(got)} บาท${wait}</div>`;
           })():''}</div>
         </div>
-        <div class="amt"><b>${B(s.collectNext)}</b><small>ต้องเก็บรอบนี้</small></div>
+        <div class="amt"><b>${B(s.collectNext)}</b>
+          <small>ต้องเก็บวันนี้<br><span style="white-space:nowrap">${+(s.collectNext/c.daily).toFixed(2)} วัน × ${B(c.daily)}</span></small></div>
       </div>
       ${open?`<div class="fentry">
         <div class="chips">
-          <button data-fill="${Math.round(s.collectNext)}">เต็มรอบ ${B(s.collectNext)}</button>
-          <button data-fill="${c.daily*7}">1 รอบ ${B(c.daily*7)}</button>
-          ${s.behind?`<button data-fill="${s.behind*c.daily}">ค้างเก่า ${B(s.behind*c.daily)}</button>`:''}
-          <button data-fill="${c.daily}">1 งวด ${B(c.daily)}</button>
+          <button data-fill="${Math.round(s.collectNext)}">เต็มยอด ${B(s.collectNext)}</button>
+          <button data-fill="${c.daily*7}">7 วัน ${B(c.daily*7)}</button>
+          ${s.behind?`<button data-fill="${s.behind*c.daily}">ค้าง ${s.behind} วัน ${B(s.behind*c.daily)}</button>`:''}
+          <button data-fill="${c.daily}">1 วัน ${B(c.daily)}</button>
           <button data-fill="${Math.round(s.remain)}">ปิดสัญญา ${B(s.remain)}</button>
         </div>
         <div class="frow"><input type="number" id="fAmt-${c.no}" min="0" step="10" placeholder="ยอดที่รับมา (บาท)">
@@ -2869,8 +2871,8 @@ function renderField(){
           <button data-skip="${c.no}" data-reason="ติดต่อไม่ได้">ติดต่อไม่ได้</button>
         </div>
         <div>
-          <div class="calhead"><span>รอบเก็บทุกเสาร์ · กดรอบที่เก็บได้</span>
-            <span>${Math.floor(s.instPaid)}/${c.days} งวด</span></div>
+          <div class="calhead"><span>ตารางจ่ายทุก 7 วัน · กดช่วงที่เก็บได้</span>
+            <span>${Math.floor(s.instPaid)}/${c.days} วัน</span></div>
           ${calHTML(c,true)}${CALLEG}
         </div>
         <div class="frow">
@@ -2878,7 +2880,7 @@ function renderField(){
           <button class="ghost" data-card="${c.no}" style="flex:1;justify-content:center">การ์ดผ่อน</button></div>
         <div class="fmini">คงเหลือต้องเก็บทั้งสัญญา ${B(s.remain)} บาท${
           got&&got<Math.round(s.collectNext)
-            ? ` · <b style="color:var(--warn)">รอบนี้ยังขาด ${B(Math.round(s.collectNext)-got)} บาท ยกไปรอบหน้าถ้าไม่เก็บเพิ่ม</b>`:''}</div>
+            ? ` · <b style="color:var(--warn)">วันนี้ยังขาด ${B(Math.round(s.collectNext)-got)} บาท ยกไปวันถัดไปถ้าไม่เก็บเพิ่ม</b>`:''}</div>
       </div>`:''}
     </div>`}).join('') : `<p class="fmini">ไม่มีรายการในกลุ่มนี้</p>`;
 
@@ -2938,7 +2940,7 @@ function closeSum(){
   return {rows,got,fuel,other};
 }
 document.getElementById('fClose').onclick=()=>{
-  if(!todayRows().length){ ftoast('รอบนี้ยังไม่มีรายการให้ปิดรอบ',false); return }
+  if(!todayRows().length){ ftoast('วันนี้ยังไม่มีรายการให้นำส่ง',false); return }
   closeSum(); document.getElementById('closeSheet').hidden=false;
 };
 document.getElementById('clClose').onclick=()=>{document.getElementById('closeSheet').hidden=true};
@@ -2950,10 +2952,10 @@ document.getElementById('clSend').onclick=async()=>{
   const note=document.getElementById('clNote').value.trim();
   if(fuel>0){ const r1=await dbAdd('expenses',{date:dt,item:'ค่าน้ำมัน',amount:fuel,source:'เดินเก็บ',
     collector:who,note,created_at:new Date().toISOString()}, dbExpenses);
-    if(r1!==true){ ftoast('บันทึกค่าน้ำมันไม่สำเร็จ ('+r1+') ยังไม่ปิดรอบ',false); return } }
+    if(r1!==true){ ftoast('บันทึกค่าน้ำมันไม่สำเร็จ ('+r1+') ยังไม่ส่งยอด',false); return } }
   if(other>0){ const r2=await dbAdd('expenses',{date:dt,item:otherItem,amount:other,source:'เดินเก็บ',
     collector:who,note,created_at:new Date().toISOString()}, dbExpenses);
-    if(r2!==true){ ftoast('บันทึกค่าใช้จ่ายอื่นไม่สำเร็จ ('+r2+') ยังไม่ปิดรอบ',false); return } }
+    if(r2!==true){ ftoast('บันทึกค่าใช้จ่ายอื่นไม่สำเร็จ ('+r2+') ยังไม่ส่งยอด',false); return } }
   const res=await dbAdd('handovers',{date:dt,collector:who,count:rows.length,total:got,
     fuel,other,other_item:other>0?otherItem:'',net:got-fuel-other,note,
     at:new Date().toISOString()}, handovers);
@@ -2961,7 +2963,7 @@ document.getElementById('clSend').onclick=async()=>{
   document.getElementById('closeSheet').hidden=true;
   document.getElementById('clNote').value=''; document.getElementById('clOtherItem').value='';
   document.getElementById('clOther').value='0';
-  ftoast('ปิดรอบแล้ว · นำส่ง '+B(got-fuel-other)+' บาท',true);
+  ftoast('ส่งยอดแล้ว · นำส่ง '+B(got-fuel-other)+' บาท',true);
   renderInbox();
 };
 document.getElementById('fSetup').onclick=()=>{
@@ -2970,9 +2972,9 @@ document.getElementById('fSetup').onclick=()=>{
 function setRound(dateStr){
   document.getElementById('fDate').value=dateStr; fOpen=null; renderField();
 }
-document.getElementById('rPrev').onclick=()=>setRound(iso(addDays(d(fieldDate()),-7)));
+document.getElementById('rPrev').onclick=()=>setRound(iso(addDays(d(fieldDate()),-1)));
 document.getElementById('rNext').onclick=()=>{
-  const nx=iso(addDays(d(fieldDate()),7));
+  const nx=iso(addDays(d(fieldDate()),1));
   setRound(nx>lastRoundDate()?lastRoundDate():nx);
 };
 document.getElementById('rNow').onclick=()=>setRound(lastRoundDate());
@@ -3080,13 +3082,13 @@ function appPreview(){
   document.getElementById('asUpfC').hidden = uMode!=='custom';
   const up=upfrontOf(uMode,r.daily,r.days,iso(start),document.getElementById('asUpfAmt').value);
   document.getElementById('asCalc').innerHTML=`<div>ผ่อนวันละ <b>${B(r.daily)}</b></div>
-    <div>เก็บทุกเสาร์ <b>${B(r.daily*7)}</b></div>
-    <div>จำนวนรอบ <b>${nr}</b> (${r.days} วัน)</div>
+    <div>งวดละ <b>${B(r.daily*7)}</b> (7 วัน)</div>
+    <div>จำนวนครั้ง <b>${nr}</b> (${r.days} วัน)</div>
     <div>ดอกเบี้ยรวม <b>${B(r.interest)}</b></div>
     <div>ต้องเก็บรวม <b>${B(v.amt+r.interest)}</b></div>
     <div style="background:var(--accent-soft);color:var(--accent)">หักงวดแรก <b>${B(up)}</b></div>
     <div style="background:var(--accent);color:#fff">จ่ายให้ลูกค้าจริง <b>${B(v.amt-up)}</b></div>
-    <div>รอบแรก <b>${thDate(first)}</b></div>`;
+    <div>ครั้งแรก <b>${thDate(first)}</b></div>`;
   const aUn=document.getElementById('asUpfNote');
   aUn.hidden = uMode!=='custom' || !up;
   aUn.textContent = upfrontNote(up,r.daily,r.days,iso(start));
@@ -3156,7 +3158,7 @@ document.getElementById('asSend').onclick=async()=>{
   document.querySelectorAll('.shots .shot').forEach(b=>{
     if(b.id!=='shot-more'){b.classList.remove('has');b.querySelectorAll('img').forEach(n=>n.remove())}});
   document.querySelectorAll('[data-shot]').forEach(i=>i.value='');
-  hint.textContent='เจ้าของอนุมัติที่หลังบ้านแล้วสัญญาจะเริ่มนับรอบเก็บเงินทันที';
+  hint.textContent='เจ้าของอนุมัติที่หลังบ้านแล้วสัญญาจะเริ่มนับวันทันที';
   document.getElementById('newSheet').hidden=true;
   ftoast('ส่งคำขอเปิดลูกค้าใหม่แล้ว · '+name,true);
   renderInbox();
@@ -3252,7 +3254,7 @@ function renderMoney(){
     if(!L){ src.textContent='โหมดเก็บข้อมูลในเครื่องนี้ · ไม่ได้ต่อฐานข้อมูลกลาง'; src.style.color='var(--muted)'; }
     else {
       const names={contracts:'สัญญา',collections:'รับเงิน',expenses:'ค่าใช้จ่าย',
-                   applications:'คำขอ',visits:'เก็บไม่ได้',handovers:'ปิดรอบ'};
+                   applications:'คำขอ',visits:'เก็บไม่ได้',handovers:'นำส่ง'};
       const parts=Object.keys(names).map(k=>names[k]+' '+(L[k]===undefined?'—':L[k]));
       const bad=Object.keys(names).filter(k=>String(L[k]).startsWith('error'));
       src.textContent='อ่านจากฐานข้อมูลได้: '+parts.join(' · ');
@@ -3288,9 +3290,9 @@ function renderMoney(){
       <td class="r">${B(upAll)}</td><td class="r"><b>${B(outCash-upAll)}</b></td></tr></tfoot>`;
 
   document.getElementById('mInHint').textContent=
-    `${inn.length} รอบ · รวม ${B(inCash)} (ในนี้เป็นงวดแรกที่หักตอนปล่อย ${B(upAll)})`;
+    `${inn.length} วัน · รวม ${B(inCash)} (ในนี้เป็นงวดแรกที่หักตอนปล่อย ${B(upAll)})`;
   document.getElementById('mInTable').innerHTML=
-    `<thead><tr><th>รอบที่ปิดยอด</th><th class="r">จำนวนรายการ</th>
+    `<thead><tr><th>วันที่ลงบัญชี</th><th class="r">จำนวนรายการ</th>
       <th class="r">หักตอนปล่อยเงิน</th><th class="r">เก็บจากมือลูกค้า</th><th class="r">รวมเข้า</th></tr></thead><tbody>`+
     inn.map(r=>`<tr><td>${thDate(r.date)}</td><td class="r">${r.n}</td>
       <td class="r">${r.upfront?B(r.upfront):'—'}</td><td class="r">${B(r.amount-r.upfront)}</td>
