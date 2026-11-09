@@ -1461,10 +1461,11 @@ function state(c){
   else if(behind<=BLOCK*2) st='watch';     // ขาดไปหนึ่งสัปดาห์
   else st='risk';
   const upcoming = rs.find(r=>d(r.date)>TODAY);
-  const collectNext = Math.max(0, Math.min(c.total-paid, Math.round(needDays*c.daily)));
+  const collectNext = Math.max(0, Math.min(c.total-paid, Math.round(behind*c.daily)));
+  const aheadNext  = Math.max(0, Math.min(c.total-paid, Math.round(needDays*c.daily)));
   const paidThru = covered>0 ? iso(addDays(d(c.start), covered-1)) : null;
   return {paid,principalPaid,interestPaid,instPaid,behind,behindRounds,due,st,rs,next,upcoming,collectNext,
-    covered,elapsed,needDays,paidThru,
+    covered,elapsed,needDays,paidThru,aheadNext,
     remain:c.total-paid, outstanding:c.amount-principalPaid, pct:Math.min(100,paid/c.total*100)};
 }
 // ---------- ประวัติลูกค้า (ผูกด้วยเบอร์โทร ถ้าไม่มีใช้ชื่อ) ----------
@@ -2578,9 +2579,8 @@ function openSlip(no){
       ${s.st==='closed'
         ? `<div class="next done"><b>ชำระครบตามสัญญาแล้ว ขอบคุณครับ</b></div>`
         : need>0
-          ? `<div class="next"><span>ยอดที่ต้องชำระตอนนี้${
-              s.behind?'<br>ค้าง '+s.behind+' วัน + ล่วงหน้าถึง '+thDate(coverTo):'<br>ชำระแล้วคุ้มถึง '+thDate(coverTo)
-            }</span><b>${B(need)}</b></div>`
+          ? `<div class="next"><span>ยอดที่ต้องชำระตอนนี้<br>ค้าง ${s.behind} วัน (ชำระแล้วคุ้มถึง ${
+              s.paidThru?thDate(s.paidThru):'—'})</span><b>${B(need)}</b></div>`
           : `<div class="next done"><b>ชำระล่วงหน้าแล้วถึง ${thDate(s.paidThru)} ยังไม่ต้องจ่ายเพิ่ม</b></div>`}
 
       <div class="rows">รายการชำระล่าสุด</div>
@@ -2612,7 +2612,7 @@ function slipText(c){
   if(s.st!=='closed'){
     L.push('ชำระแล้วคุ้มถึง: '+(s.paidThru?thDate(s.paidThru):'ยังไม่ได้ชำระ'));
     if(s.behind) L.push('ค้าง: '+s.behind+' วัน');
-    L.push(need>0 ? 'ยอดที่ต้องชำระตอนนี้: '+B(need)+' บาท (คุ้มถึง '+thDate(coverTo)+')'
+    L.push(need>0 ? 'ยอดที่ต้องชำระตอนนี้: '+B(need)+' บาท'
                   : 'ชำระล่วงหน้าแล้ว ยังไม่ต้องจ่ายเพิ่ม');
   }
   if(s.st==='closed') L.push('สถานะ: ชำระครบตามสัญญาแล้ว');
@@ -2853,13 +2853,15 @@ function renderField(){
           })():''}</div>
         </div>
         <div class="amt"><b>${B(s.collectNext)}</b>
-          <small>ต้องเก็บวันนี้<br><span style="white-space:nowrap">${+(s.collectNext/c.daily).toFixed(2)} วัน × ${B(c.daily)}</span></small></div>
+          <small>${s.collectNext?'ต้องเก็บวันนี้':'ยังไม่ถึงกำหนด'}<br><span style="white-space:nowrap">${
+            s.collectNext? +(s.collectNext/c.daily).toFixed(2)+' วัน × '+B(c.daily)
+                         : 'จ่ายถึง '+(s.paidThru?thDate(s.paidThru):'—')}</span></small></div>
       </div>
       ${open?`<div class="fentry">
         <div class="chips">
-          <button data-fill="${Math.round(s.collectNext)}">เต็มยอด ${B(s.collectNext)}</button>
+          ${s.collectNext?`<button data-fill="${Math.round(s.collectNext)}">ค้าง ${s.behind} วัน ${B(s.collectNext)}</button>`:''}
+          <button data-fill="${Math.round(s.aheadNext)}">ถึงล่วงหน้า 7 วัน ${B(s.aheadNext)}</button>
           <button data-fill="${c.daily*7}">7 วัน ${B(c.daily*7)}</button>
-          ${s.behind?`<button data-fill="${s.behind*c.daily}">ค้าง ${s.behind} วัน ${B(s.behind*c.daily)}</button>`:''}
           <button data-fill="${c.daily}">1 วัน ${B(c.daily)}</button>
           <button data-fill="${Math.round(s.remain)}">ปิดสัญญา ${B(s.remain)}</button>
         </div>
