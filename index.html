@@ -1529,6 +1529,12 @@ const ST = {ok:['ปกติ','p-ok'],watch:['เฝ้าระวัง','p-w
             closed:['ปิดสัญญา','p-idle'],pending:['รอเริ่ม','p-idle'],
             void:['ยกเลิกแล้ว','p-bad']};
 const isVoid = c => !!(c && c.voided);
+// ป้ายที่ลูกค้าเห็นได้ — บอกแค่ข้อเท็จจริง ไม่บอกว่าเราประเมินเขายังไง
+const CUST_ST = {closed:['ชำระครบแล้ว','p-ok'], void:['ยกเลิกแล้ว','p-idle'],
+                 pending:['ยังไม่เริ่ม','p-idle']};
+const custPill = st => CUST_ST[st]
+  ? `<span class="pill ${CUST_ST[st][1]}">${CUST_ST[st][0]}</span>`
+  : `<span class="pill p-idle">กำลังผ่อน</span>`;
 const pill = st => `<span class="pill ${ST[st][1]}">${ST[st][0]}</span>`;
 
 function totals(){
@@ -2700,7 +2706,7 @@ function openCard(no){
     <div class="csblock" style="padding-top:14px">
       <div class="cardtop">
         <div><b>${esc(c.name)}</b><span class="mono">${c.no} · ${esc(c.phone)}</span></div>
-        ${pill(s.st)}
+        ${custPill(s.st)}
       </div>
       <div class="two">
         <div class="paid"><div class="k">ชำระมาแล้ว</div><div class="v">${B(s.paid)}</div>
