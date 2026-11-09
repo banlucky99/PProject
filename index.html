@@ -2585,9 +2585,9 @@ function openSlip(no){
       ${s.st==='closed'
         ? `<div class="next done"><b>ชำระครบตามสัญญาแล้ว ขอบคุณครับ</b></div>`
         : need>0
-          ? `<div class="next"><span>ยอดที่ต้องชำระตอนนี้<br>ค้าง ${s.behind} วัน (ชำระแล้วคุ้มถึง ${
-              s.paidThru?thDate(s.paidThru):'—'})</span><b>${B(need)}</b></div>`
-          : `<div class="next done"><b>ชำระล่วงหน้าแล้วถึง ${thDate(s.paidThru)} ยังไม่ต้องจ่ายเพิ่ม</b></div>`}
+          ? `<div class="next"><span>ยอดที่ต้องชำระตอนนี้<br>ชำระถึงวันที่ ${
+              s.paidThru?thDate(s.paidThru):'—'}</span><b>${B(need)}</b></div>`
+          : `<div class="next done"><b>ชำระถึงวันที่ ${thDate(s.paidThru)} แล้ว ยังไม่ต้องจ่ายเพิ่ม</b></div>`}
 
       <div class="rows">รายการชำระล่าสุด</div>
       <table><thead><tr><th>วันที่ชำระ</th><th class="r">จำนวนเงิน</th><th class="r">วัน</th></tr></thead>
@@ -2616,8 +2616,7 @@ function slipText(c){
     'ชำระมาแล้ว: '+B(s.paid)+' บาท ('+Math.floor(s.instPaid)+'/'+c.days+' วัน)',
     'คงเหลือ: '+B(s.remain)+' บาท'];
   if(s.st!=='closed'){
-    L.push('ชำระแล้วคุ้มถึง: '+(s.paidThru?thDate(s.paidThru):'ยังไม่ได้ชำระ'));
-    if(s.behind) L.push('ค้าง: '+s.behind+' วัน');
+    L.push('ชำระถึงวันที่: '+(s.paidThru?thDate(s.paidThru):'ยังไม่ได้ชำระ'));
     L.push(need>0 ? 'ยอดที่ต้องชำระตอนนี้: '+B(need)+' บาท'
                   : 'ชำระล่วงหน้าแล้ว ยังไม่ต้องจ่ายเพิ่ม');
   }
