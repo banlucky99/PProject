@@ -863,8 +863,8 @@ button.ghost:hover{background:var(--surface-2)}
             <label id="nDaysC" hidden>จำนวนวัน<input type="number" id="nDays" min="7" step="1" value="45"></label>
             <label id="nIntC" hidden>ดอกเบี้ยรวม<input type="number" id="nInt" min="0" step="100" value="1800"></label>
             <label>วันเริ่มสัญญา<input type="date" id="nStart"></label>
-            <label>หักงวดแรก<select id="nUpf"></select></label>
-            <label id="nUpfC" hidden>ยอดที่หัก (บาท)<input type="number" id="nUpfAmt" min="0" step="50" value="0"></label>
+            <label>หักตอนปล่อยเงิน (บาท)<input type="number" id="nUpfAmt" min="0" step="50" value="0"
+              placeholder="ใส่ยอดที่หักจริง"></label>
             <button class="go" id="nSave">เปิดสัญญา</button>
           </div>
           <div class="split" id="nSplit"></div>
@@ -1075,8 +1075,8 @@ button.ghost:hover{background:var(--surface-2)}
       </div>
       <div class="form" style="gap:10px">
         <label>วันเริ่มสัญญา<input type="date" id="asStart"></label>
-        <label>หักงวดแรกตอนปล่อยเงิน<select id="asUpf"></select></label>
-        <label id="asUpfC" hidden>ยอดที่หัก (บาท)<input type="number" id="asUpfAmt" min="0" step="50" value="0"></label>
+        <label>หักตอนปล่อยเงิน (บาท)<input type="number" id="asUpfAmt" min="0" step="50" value="0"
+          placeholder="ใส่ยอดที่หักจริง"></label>
       </div>
       <div class="split" id="asCalc"></div>
       <p class="fmini" id="asUpfNote" hidden style="color:var(--accent)"></p>
@@ -1287,20 +1287,24 @@ function upfrontOf(mode,daily,days,start,custom){
   if(mode!=='first') return 0;
   return Math.round(Math.min(days||BLOCK, BLOCK)*daily);   // 7 วันแรกเสมอ
 }
+const upfrontTouched={n:false,as:false};      // ผู้ใช้พิมพ์ยอดเองแล้วหรือยัง
+function fillUpfront(id,daily,days){          // ตั้งค่าเริ่มต้นให้ = 7 วัน
+  const el=document.getElementById(id);
+  const v=Math.round(Math.min(days||BLOCK,BLOCK)*daily);
+  el.value=v;                       // ยังไม่ได้พิมพ์เอง ช่องกับยอดที่คิดต้องตรงกันเสมอ
+  return v;
+}
 function upfrontOptions(sel){
   return Object.keys(UPFRONT_LABEL)
     .map(k=>`<option value="${k}" ${k===(sel||UPFRONT_DEFAULT)?'selected':''}>${UPFRONT_LABEL[k]}</option>`).join('');
 }
 // อธิบายว่าหักไปแล้วจ่ายครอบคลุมถึงวันไหน
 function upfrontNote(up,daily,days,start){
-  if(!up) return '';
-  const s=d(start||iso(TODAY)), n=Math.min(days||BLOCK, BLOCK);
-  const full=Math.round(n*daily), diff=full-up;
+  if(!up) return 'ไม่ได้หักตอนปล่อยเงิน · ลูกค้าเริ่มค้างตั้งแต่วันที่ 2';
+  const st=d(start||iso(TODAY));
   const inst=String(Number((up/daily).toFixed(2)));
-  const thru=thDate(iso(addDays(s, Math.floor(up/daily)-1)));
-  if(diff>0) return `หัก ${B(up)} = ${inst} วัน · ยังขาดอีก ${B(diff)} ของ 7 วันแรก · จ่ายถึง ${thru}`;
-  if(diff<0) return `หัก ${B(up)} = ${inst} วัน · เกิน 7 วันแรก ${B(-diff)} · จ่ายถึง ${thru}`;
-  return `หัก ${B(up)} = ${inst} วัน · ครบ 7 วันแรก · จ่ายถึง ${thru}`;
+  const n=Math.floor(up/daily);
+  return `หัก ${B(up)} = ${inst} วัน · จ่ายถึง ${thDate(iso(addDays(st, Math.max(0,n-1))))}`;
 }
 
 // ---------- ช่วงเก็บเงิน: ทุก 7 วันนับจากวันเปิดสัญญา ----------
@@ -1749,8 +1753,7 @@ function cdEditHTML(c){
     <label>ดอกเบี้ย (%)<input type="number" id="ceInt" step="1" min="0"
       value="${Math.round(c.interest/c.amount*100)}"></label>
     <label>วันเริ่มสัญญา<input type="date" id="ceStart" value="${esc(c.start)}"></label>
-    <label>หักงวดแรก<select id="ceUpf"></select></label>
-    <label id="ceUpfC" hidden>ยอดที่หัก (บาท)<input type="number" id="ceUpfAmt" step="50" min="0"
+    <label>หักตอนปล่อยเงิน (บาท)<input type="number" id="ceUpfAmt" step="50" min="0"
       value="${Number(c.upfront)||0}"></label>
   </div>
   <div class="split" id="cePrev"></div>
@@ -1781,8 +1784,7 @@ function cePreview(){
   const pct=Math.max(0,Number(document.getElementById('ceInt').value)||0);
   const start=document.getElementById('ceStart').value||c.start;
   const interest=Math.ceil(amt*pct/100), total=amt+interest, daily=total/days;
-  const mode=document.getElementById('ceUpf').value;
-  document.getElementById('ceUpfC').hidden = mode!=='custom';
+  const mode='custom';
   const up=upfrontOf(mode,daily,days,start,document.getElementById('ceUpfAmt').value);
   const end=iso(addDays(d(start),days-1));
   // เบอร์ตรงกับลูกค้าเก่าคนไหน ให้ใช้รหัสเดิมของคนนั้น
@@ -1793,7 +1795,7 @@ function cePreview(){
     <div>งวดละ <b>${B(daily*7)}</b> (7 วัน)</div>
     <div>ดอกเบี้ยรวม <b>${B(interest)}</b></div>
     <div>ต้องเก็บรวม <b>${B(total)}</b></div>
-    <div>หักงวดแรก <b>${B(up)}</b></div>
+    <div>หักตอนปล่อยเงิน <b>${B(up)}</b></div>
     <div>วันหมดสัญญา <b>${thDate(end)}</b></div>`;
   const paid=payments.filter(x=>x.no===c.no).reduce((a,x)=>a+x.amount,0);
   const W=document.getElementById('ceWarn'); const msg=[];
@@ -1812,10 +1814,8 @@ function openCdEdit(){
   const c=contracts.find(x=>x.no===selected); if(!c) return;
   const box=document.getElementById('cdEditBox');
   box.hidden=false; box.innerHTML=cdEditHTML(c);
-  document.getElementById('ceUpf').innerHTML=upfrontOptions(c.upfront_mode||'first');
   ['ceAmt','ceDays','ceInt','ceStart','ceUpfAmt','cePhone'].forEach(id=>
     document.getElementById(id).oninput=cePreview);
-  document.getElementById('ceUpf').onchange=cePreview;
   document.getElementById('ceCancel').onclick=()=>{cdEditing=false;renderDetail()};
   const paidNow=payments.filter(x=>x.no===c.no).reduce((a,x)=>a+x.amount,0);
   const vw=document.getElementById('ceVWarn');
@@ -2003,9 +2003,9 @@ function loanPreview(){
   const r=rateFor(amt,v.plan,v.days,v.interest), start=d(document.getElementById('nStart').value||iso(TODAY));
   const t=totals();
   const nr=Math.ceil(r.days/7), first=satFrom(addDays(start,1));
-  const uMode=document.getElementById('nUpf').value;
-  document.getElementById('nUpfC').hidden = uMode!=='custom';
-  const up=upfrontOf(uMode,r.daily,r.days,iso(start),document.getElementById('nUpfAmt').value), out=amt-up;
+  const up=upfrontTouched.n ? upfrontOf('custom',r.daily,r.days,iso(start),document.getElementById('nUpfAmt').value)
+          : fillUpfront('nUpfAmt',r.daily,r.days);
+  const out=amt-up;
   document.getElementById('nSplit').innerHTML=`<div>เลขที่สัญญา <b>${nextContractNo()}</b></div>
     <div>ค่างวด <b>${B(r.daily)}</b> /วัน</div>
     <div>งวดละ <b>${B(r.daily*7)}</b> × ${nr} ครั้ง</div>
@@ -2016,16 +2016,15 @@ function loanPreview(){
     <div>เก็บครั้งแรก <b>${thDate(first)}</b></div>
     <div>ครั้งสุดท้าย <b>${thDate(addDays(first,7*(nr-1)))}</b></div>`;
   const nUn=document.getElementById('nUpfNote');
-  nUn.hidden = uMode!=='custom' || !up;
+  nUn.hidden = !up;
   nUn.textContent = upfrontNote(up,r.daily,r.days,iso(start));
   document.getElementById('nCash').textContent = out>t.cash
     ? `เงินสดพร้อมปล่อยมี ${B(t.cash)} บาท ไม่พอปล่อยยอดนี้`
     : `ปล่อยแล้วเงินสดเหลือ ${B(t.cash-out)} บาท`;
   document.getElementById('nCash').style.color = out>t.cash?'var(--bad)':'var(--muted)';
 }
-document.getElementById('nUpf').innerHTML=upfrontOptions();
-document.getElementById('nUpf').onchange=loanPreview;
-['nAmtCustom','nDays','nInt','nUpfAmt'].forEach(id=>document.getElementById(id).oninput=loanPreview);
+['nAmtCustom','nDays','nInt'].forEach(id=>document.getElementById(id).oninput=loanPreview);
+document.getElementById('nUpfAmt').oninput=()=>{upfrontTouched.n=true;loanPreview()};
 ['nPlan','nAmt','nStart'].forEach(id=>document.getElementById(id).onchange=
   id==='nPlan'?fillLoanAmounts:loanPreview);
 document.getElementById('nSave').onclick=async()=>{
@@ -2036,7 +2035,7 @@ document.getElementById('nSave').onclick=async()=>{
   if(!v.amt||(v.custom&&!v.days)){t.hidden=false;t.style.color='var(--bad)';t.textContent='ใส่ยอดกู้และจำนวนวันให้ครบก่อน';return}
   const c=await createContract({name,phone:document.getElementById('nPhone').value.trim(),
     plan:v.plan,amount:v.amt,days:v.days||null,interest:v.custom?v.interest:null,
-    upfront_mode:document.getElementById('nUpf').value,
+    upfront_mode:'custom',
     upfront_amt:Number(document.getElementById('nUpfAmt').value)||0,
     start:document.getElementById('nStart').value||iso(TODAY)});
   if(!c){t.hidden=false;t.style.color='var(--bad)';t.textContent='เปิดสัญญาไม่สำเร็จ · '+(lastDbError||'ลองอีกครั้ง');return}
@@ -2328,7 +2327,7 @@ function cardVals(card){
     days: custom?Number(card.querySelector('[data-f="days"]').value)||0:0,
     interest: custom?Number(card.querySelector('[data-f="int"]').value)||0:0,
     start: card.querySelector('[data-f="start"]').value||thisRoundDate(),
-    upfront_mode: card.querySelector('[data-f="upf"]').value,
+    upfront_mode: 'custom',
     upfront_amt: Number(card.querySelector('[data-f="upfa"]').value)||0};
 }
 function appPreviewRow(card){
@@ -2338,8 +2337,7 @@ function appPreviewRow(card){
   card.querySelector('[data-c="int"]').hidden = !v.custom;
   const r=rateFor(v.amt,v.plan,v.days,v.interest);
   const nr=Math.ceil(r.days/7), first=satFrom(addDays(d(v.start),1)), cash=totals().cash;
-  card.querySelector('[data-c="upf"]').hidden = v.upfront_mode!=='custom';
-  const up=upfrontOf(v.upfront_mode,r.daily,r.days,v.start,v.upfront_amt), out=v.amt-up;
+  const up=upfrontOf('custom',r.daily,r.days,v.start,v.upfront_amt), out=v.amt-up;
   card.querySelector('[data-out]').innerHTML=`<div>เลขที่สัญญา <b>${nextContractNo()}</b></div>
     <div>ผ่อนวันละ <b>${B(r.daily)}</b> × ${r.days} วัน</div>
     <div>งวดละ <b>${B(r.daily*7)}</b> × ${nr} ครั้ง</div>
@@ -2349,7 +2347,7 @@ function appPreviewRow(card){
     <div>ครั้งแรก <b>${thDate(first)}</b></div>
     <div style="color:${out>cash?'var(--bad)':'var(--muted)'}">${out>cash
       ? 'เงินสดมี '+B(cash)+' ไม่พอปล่อย' : 'ปล่อยแล้วเหลือ '+B(cash-out)}</div>
-    ${v.upfront_mode==='custom'&&up?`<div style="grid-column:1/-1;color:var(--accent)">${upfrontNote(up,r.daily,r.days,v.start)}</div>`:''}`;
+    ${up?`<div style="grid-column:1/-1;color:var(--accent)">${upfrontNote(up,r.daily,r.days,v.start)}</div>`:''}`;
 }
 function renderApps(){
   const box=document.getElementById('approveBox'); if(!box) return;
@@ -2391,8 +2389,8 @@ function renderApps(){
         <label data-c="days" hidden>จำนวนวัน<input type="number" data-f="days" min="7" step="1" value="${Number(a.days)||45}"></label>
         <label data-c="int" hidden>ดอกเบี้ยรวม<input type="number" data-f="int" min="0" step="100" value="${Number(a.interest)||0}"></label>
         <label>วันเริ่มสัญญา<input type="date" data-f="start" value="${esc(a.start||thisRoundDate())}"></label>
-        <label>หักงวดแรก<select data-f="upf">${upfrontOptions(a.upfront_mode)}</select></label>
-        <label data-c="upf" hidden>ยอดที่หัก (บาท)<input type="number" data-f="upfa" min="0" step="50" value="${Number(a.upfront_amt)||0}"></label>
+        <label>หักตอนปล่อยเงิน (บาท)<input type="number" data-f="upfa" min="0" step="50"
+          value="${Number(a.upfront_amt)||Math.round(BLOCK*(a.daily||0))||0}"></label>
       </div>
       <div class="split" data-out></div>
       <div class="acts"><button class="go" data-appok="${a.id}">อนุมัติเปิดสัญญา</button>
@@ -2407,7 +2405,7 @@ function renderApps(){
       sel.innerHTML=amtOptions(e.target.value==='custom'?'60 วัน':e.target.value,keep)
         +`<option value="custom" ${keep==='custom'?'selected':''}>กำหนดเอง</option>`;
       appPreviewRow(card); };
-    card.querySelectorAll('[data-f="amt"],[data-f="start"],[data-f="amtc"],[data-f="days"],[data-f="int"],[data-f="upf"],[data-f="upfa"]')
+    card.querySelectorAll('[data-f="amt"],[data-f="start"],[data-f="amtc"],[data-f="days"],[data-f="int"],[data-f="upfa"]')
       .forEach(el=>{ el.onchange=()=>appPreviewRow(card); el.oninput=()=>appPreviewRow(card) });
   });
   box.querySelectorAll('[data-appok]').forEach(b=>b.onclick=()=>decideApp(b.dataset.appok,true));
@@ -2543,12 +2541,14 @@ function slipData(c){
     .sort((a,b)=>String(b.paid||b.date).localeCompare(String(a.paid||a.date)));
   const next=rounds(c).find(r=>d(r.date)>TODAY) || null;   // วันเก็บครั้งถัดไปจริง
   const need=Math.round(s.collectNext);
-  return {s,ps,next,need};
+  // จ่ายยอดนี้แล้วจะคุ้มถึงวันไหน
+  const coverTo=iso(addDays(d(c.start), Math.min(c.days, Math.floor((s.paid+need)/c.daily))-1));
+  return {s,ps,next,need,coverTo};
 }
 function openSlip(no){
   const c=contracts.find(x=>x.no===no); if(!c) return;
   slipNo=no;
-  const {s,ps,next,need}=slipData(c);
+  const {s,ps,next,need,coverTo}=slipData(c);
   const daysLeft=Math.max(0,dayDiff(d(c.end),TODAY));
   const shown=ps.slice(0,6);
   document.getElementById('slipBody').innerHTML=`
@@ -2577,10 +2577,11 @@ function openSlip(no){
 
       ${s.st==='closed'
         ? `<div class="next done"><b>ชำระครบตามสัญญาแล้ว ขอบคุณครับ</b></div>`
-        : next
-          ? `<div class="next"><span>ชำระครั้งถัดไป<br>${thDate(next.date)}${
-              s.behindRounds?' · รวมค้าง '+s.behind+' วัน':''}</span><b>${B(need)}</b></div>`
-          : `<div class="next"><span>ครบกำหนดสัญญาแล้ว<br>กรุณาติดต่อเจ้าหน้าที่</span><b>${B(s.remain)}</b></div>`}
+        : need>0
+          ? `<div class="next"><span>ยอดที่ต้องชำระตอนนี้${
+              s.behind?'<br>ค้าง '+s.behind+' วัน + ล่วงหน้าถึง '+thDate(coverTo):'<br>ชำระแล้วคุ้มถึง '+thDate(coverTo)
+            }</span><b>${B(need)}</b></div>`
+          : `<div class="next done"><b>ชำระล่วงหน้าแล้วถึง ${thDate(s.paidThru)} ยังไม่ต้องจ่ายเพิ่ม</b></div>`}
 
       <div class="rows">รายการชำระล่าสุด</div>
       <table><thead><tr><th>วันที่ชำระ</th><th class="r">จำนวนเงิน</th><th class="r">วัน</th></tr></thead>
@@ -2601,16 +2602,19 @@ function openSlip(no){
   document.getElementById('slipSheet').hidden=false;
 }
 function slipText(c){
-  const {s,next,need,ps}=slipData(c);
+  const {s,next,need,ps,coverTo}=slipData(c);
   const L=['สรุปยอดผ่อนชำระ · '+thDate(TODAY),
     'ชื่อ: '+c.name, 'สัญญา: '+c.no,
     'ยอดกู้: '+B(c.amount)+' บาท · ผ่อนวันละ '+B(c.daily)+' บาท',
     'เริ่มสัญญา: '+thDate(c.start)+' · หมดสัญญา: '+thDate(c.end),
     'ชำระมาแล้ว: '+B(s.paid)+' บาท ('+Math.floor(s.instPaid)+'/'+c.days+' วัน)',
     'คงเหลือ: '+B(s.remain)+' บาท'];
-  if(s.st!=='closed') L.push(next
-    ? 'ชำระครั้งถัดไป: '+B(need)+' บาท กำหนด '+thDate(next.date)
-    : 'ครบกำหนดสัญญาแล้ว ยอดค้าง '+B(s.remain)+' บาท');
+  if(s.st!=='closed'){
+    L.push('ชำระแล้วคุ้มถึง: '+(s.paidThru?thDate(s.paidThru):'ยังไม่ได้ชำระ'));
+    if(s.behind) L.push('ค้าง: '+s.behind+' วัน');
+    L.push(need>0 ? 'ยอดที่ต้องชำระตอนนี้: '+B(need)+' บาท (คุ้มถึง '+thDate(coverTo)+')'
+                  : 'ชำระล่วงหน้าแล้ว ยังไม่ต้องจ่ายเพิ่ม');
+  }
   if(s.st==='closed') L.push('สถานะ: ชำระครบตามสัญญาแล้ว');
   if(ps.length){ L.push('','ชำระล่าสุด:');
     ps.slice(0,5).forEach(p=>L.push('  '+thDate(p.paid||p.date)+' = '+B(p.amount)+' บาท')); }
@@ -3078,9 +3082,8 @@ function appPreview(){
   document.getElementById('asIntC').hidden = !v.custom;
   const r=rateFor(v.amt,v.plan,v.days,v.interest), start=d(document.getElementById('asStart').value||thisRoundDate());
   const nr=Math.ceil(r.days/7), first=satFrom(addDays(start,1));
-  const uMode=document.getElementById('asUpf').value;
-  document.getElementById('asUpfC').hidden = uMode!=='custom';
-  const up=upfrontOf(uMode,r.daily,r.days,iso(start),document.getElementById('asUpfAmt').value);
+  const up=upfrontTouched.as ? upfrontOf('custom',r.daily,r.days,iso(start),document.getElementById('asUpfAmt').value)
+          : fillUpfront('asUpfAmt',r.daily,r.days);
   document.getElementById('asCalc').innerHTML=`<div>ผ่อนวันละ <b>${B(r.daily)}</b></div>
     <div>งวดละ <b>${B(r.daily*7)}</b> (7 วัน)</div>
     <div>จำนวนครั้ง <b>${nr}</b> (${r.days} วัน)</div>
@@ -3090,7 +3093,7 @@ function appPreview(){
     <div style="background:var(--accent);color:#fff">จ่ายให้ลูกค้าจริง <b>${B(v.amt-up)}</b></div>
     <div>ครั้งแรก <b>${thDate(first)}</b></div>`;
   const aUn=document.getElementById('asUpfNote');
-  aUn.hidden = uMode!=='custom' || !up;
+  aUn.hidden = !up;
   aUn.textContent = upfrontNote(up,r.daily,r.days,iso(start));
 }
 ['asPlan','asAmt','asStart','asAmtCustom'].forEach(id=>document.getElementById(id).onchange=
@@ -3126,9 +3129,7 @@ function lookupOld(){
   };
 }
 document.getElementById('asPhone').oninput=lookupOld;
-document.getElementById('asUpf').innerHTML=upfrontOptions();
-document.getElementById('asUpf').onchange=appPreview;
-document.getElementById('asUpfAmt').oninput=appPreview;
+document.getElementById('asUpfAmt').oninput=()=>{upfrontTouched.as=true;appPreview()};
 document.getElementById('fNew').onclick=()=>{
   document.getElementById('asStart').value=thisRoundDate();
   fillAppAmounts(); document.getElementById('newSheet').hidden=false;
@@ -3144,7 +3145,7 @@ document.getElementById('asSend').onclick=async()=>{
   const rec={name,phone:document.getElementById('asPhone').value.trim(),
     plan:v.plan, amount:v.amt, days:v.days||null, interest:v.custom?v.interest:null,
     start:document.getElementById('asStart').value||thisRoundDate(),
-    upfront_mode:document.getElementById('asUpf').value,
+    upfront_mode:'custom',
     upfront_amt:Number(document.getElementById('asUpfAmt').value)||0,
     note:document.getElementById('asNote').value.trim(),
     photos:{...newPhotos,extra:extraPhotos.slice()},
