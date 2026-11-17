@@ -55,7 +55,7 @@ function authErr(e){
 
 /* ---- อะแดปเตอร์: ให้โค้ดแอปเรียกใช้เหมือนเดิมทุกบรรทัด ---- */
 const PK = {contracts:'no'};
-const LOADED = {};          // กี่แถวที่อ่านมาได้จากแต่ละตาราง · ใช้โชว์ในหน้ากระทบยอดเงิน
+const LOADED = {};          // กี่แถวที่อ่านมาได้จากแต่ละตาราง
 function sbSnap(table, cb){
   const key = PK[table] || 'id';
   const load = async () => {
@@ -141,9 +141,9 @@ function authGateHTML(mode){
     <label>รหัสผ่าน<input id="auPass" type="password"
       autocomplete="${up ? 'new-password' : 'current-password'}"></label>
     <button class="go" id="auGo">${up ? 'สมัครสมาชิก' : 'เข้าสู่ระบบ'}</button>
-    <p class="fmini" id="auMsg" ${SB_CFG_ERR ? 'style="color:var(--bad)"' : ''}>${SB_CFG_ERR || (up
+    <p class="fmini" id="auMsg">${up
       ? 'สมัครแล้วต้องรอเจ้าของอนุมัติก่อนถึงจะเข้าใช้งานได้'
-      : 'ยังไม่มีบัญชี กดสมัครสมาชิกได้เลย')}</p>`);
+      : 'ยังไม่มีบัญชี กดสมัครสมาชิกได้เลย'}</p>`);
 
   document.getElementById('auTabIn').onclick = () => authGateHTML('login');
   document.getElementById('auTabUp').onclick = () => authGateHTML('signup');
@@ -163,14 +163,15 @@ function authGateHTML(mode){
       const name = (document.getElementById('auName').value || u).trim();
       const {data, error} = await SB.auth.signUp({
         email: toEmail(u), password: p, options:{data:{name, username:u}}});
-      if(error){ msg.textContent = 'สมัครไม่สำเร็จ · ' + authErr(error);
+      if(error){
+        msg.textContent = /already/i.test(error.message) ? 'ชื่อผู้ใช้นี้มีคนใช้แล้ว' : 'สมัครไม่สำเร็จ: ' + error.message;
         msg.style.color = 'var(--bad)'; return }
       if(data.session) return enterApp(data.session.user);
       msg.textContent = 'สมัครเรียบร้อย · กดแท็บเข้าสู่ระบบเพื่อเข้าใช้งาน';
       msg.style.color = 'var(--ok)'; return;
     }
     const {data, error} = await SB.auth.signInWithPassword({email: toEmail(u), password: p});
-    if(error){ msg.textContent = 'เข้าไม่ได้ · ' + authErr(error); msg.style.color = 'var(--bad)'; return }
+    if(error){ msg.textContent = 'เข้าไม่ได้ · ตรวจชื่อผู้ใช้กับรหัสผ่านอีกครั้ง'; msg.style.color = 'var(--bad)'; return }
     enterApp(data.user);
   };
   document.getElementById('auGo').onclick = go;
@@ -1364,8 +1365,8 @@ function nextCustId(){                  // รหัสลูกค้า ใช
   return String(max+1).padStart(4,'0');
 }
 function custIdFor(o){                  // ลูกค้าเก่ากลับมากู้ซ้ำ = รหัสเดิม
-  const key=custKey(o);
-  const prev=contracts.filter(c=>custKey(c)===key)
+  const key=phoneKey(o);
+  const prev=contracts.filter(c=>phoneKey(c)===key)
     .sort((a,b)=>String(a.start).localeCompare(String(b.start)))[0];
   return prev ? prev.id : nextCustId();
 }
@@ -1416,7 +1417,7 @@ function dbErrText(e){
 async function createContract(o){
   const r=rateFor(Number(o.amount),o.plan,o.days,o.interest), no=nextContractNo();
   const mode=o.upfront_mode||UPFRONT_DEFAULT, up=upfrontOf(mode,r.daily,r.days,o.start,o.upfront_amt);
-  const c={id:custIdFor(o),name:o.name,phone:o.phone||'—',no,plan:r.plan,amount:Number(o.amount),
+  const c={id:o.cust_id||custIdFor(o),name:o.name,phone:o.phone||'—',no,plan:r.plan,amount:Number(o.amount),
     daily:r.daily,days:r.days,interest:r.interest,total:Number(o.amount)+r.interest,
     start:o.start,end:iso(addDays(d(o.start),r.days-1)),note:o.note||'',photos:o.photos||{},
     upfront_mode:mode, upfront:up};
@@ -1469,9 +1470,14 @@ function state(c){
     remain:c.total-paid, outstanding:c.amount-principalPaid, pct:Math.min(100,paid/c.total*100)};
 }
 // ---------- ประวัติลูกค้า (ผูกด้วยเบอร์โทร ถ้าไม่มีใช้ชื่อ) ----------
-function custKey(x){
+// จับคู่จากเบอร์ (หรือชื่อถ้าไม่มีเบอร์) — ใช้ตอนหาว่าเคยเป็นลูกค้าไหม
+function phoneKey(x){
   const p=String(x.phone||'').replace(/\D/g,'');
   return p ? 'p:'+p : 'n:'+String(x.name||'').trim();
+}
+// ตัวตนของลูกค้า — รหัสมาก่อนเสมอ ลูกค้าเปลี่ยนเบอร์แล้วยังเป็นคนเดิม
+function custKey(x){
+  return x && x.id ? 'i:'+String(x.id) : phoneKey(x||{});
 }
 function lateRounds(c){                 // เคยค้างนานสุดกี่วันตลอดอายุสัญญา
   let due=0, late=0;
@@ -1485,7 +1491,8 @@ function lateRounds(c){                 // เคยค้างนานสุ�
   return late;
 }
 function custStats(key,excludeNo){
-  const list=contracts.filter(x=>custKey(x)===key && x.no!==excludeNo)
+  // รับได้ทั้งคีย์รหัสและคีย์เบอร์ เพื่อให้ค้นจากเบอร์ก็ยังเจอ
+  const list=contracts.filter(x=>(custKey(x)===key||phoneKey(x)===key) && x.no!==excludeNo)
     .sort((a,b)=>String(b.start).localeCompare(String(a.start)));
   let closed=0,maxLate=0,interest=0,borrowed=0,openRisk=0,open=0;
   const rows=list.map(x=>{
@@ -2335,7 +2342,8 @@ function cardVals(card){
     interest: custom?Number(card.querySelector('[data-f="int"]').value)||0:0,
     start: card.querySelector('[data-f="start"]').value||thisRoundDate(),
     upfront_mode: 'custom',
-    upfront_amt: Number(card.querySelector('[data-f="upfa"]').value)||0};
+    upfront_amt: Number(card.querySelector('[data-f="upfa"]').value)||0,
+    cust_id: (card.querySelector('[data-f="cid"]').value||'').trim()||null};
 }
 function appPreviewRow(card){
   const v=cardVals(card);
@@ -2398,6 +2406,8 @@ function renderApps(){
         <label>วันเริ่มสัญญา<input type="date" data-f="start" value="${esc(a.start||thisRoundDate())}"></label>
         <label>หักตอนปล่อยเงิน (บาท)<input type="number" data-f="upfa" min="0" step="50"
           value="${Number(a.upfront_amt)||Math.round(BLOCK*(a.daily||0))||0}"></label>
+        <label>รหัสลูกค้า<input data-f="cid" class="mono" placeholder="เว้นว่าง = ออกรหัสใหม่"
+          value="${esc(a.cust_id||'')}"></label>
       </div>
       <div class="split" data-out></div>
       <div class="acts"><button class="go" data-appok="${a.id}">อนุมัติเปิดสัญญา</button>
@@ -2428,6 +2438,7 @@ async function decideApp(id,ok){
       o.plan=v.plan; o.amount=v.amt||a.amount; o.start=v.start;
       o.days=v.custom?v.days:null; o.interest=v.custom?v.interest:null;
       o.upfront_mode=v.upfront_mode; o.upfront_amt=v.upfront_amt;
+      o.cust_id=v.cust_id;
     }
     const c=await createContract(o);
     if(!c){ syncLabel('เปิดสัญญาไม่สำเร็จ · '+(lastDbError||'ลองอีกครั้ง'),false); return }
@@ -2474,11 +2485,25 @@ function calDays(c,tappable){
   return `<div class="cald">${g}</div>`;
 }
 function roundView(c){                       // สรุปทุก 7 วัน: ต้องเก็บ / เก็บได้ / ขาด
-  const recs=recOf(c.no);
-  return rounds(c).map(r=>{
-    const rec=recs[r.date]||null, got=rec?rec.amount:0;
-    return {...r, rec, got, short:Math.max(0,r.amount-got),
-      st: got>=r.amount-0.5 ? 'full' : got>0 ? 'part' : (d(r.date)>TODAY ? 'future' : 'none')};
+  // เงินที่เก็บมาไหลเติมช่วงแรกก่อน เหลือค่อยไหลลงช่วงถัดไป
+  // (ไม่จับคู่ตามวันที่ เพราะเก็บวันไหนก็ได้ ไม่ต้องตรงวันครบกำหนด)
+  const recs=recOf(c.no), rs=rounds(c);
+  const all=Object.entries(recs).map(([date,r])=>({date,...r}))
+    .sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+  let pool=all.reduce((a,r)=>a+r.amount,0);
+  let anyPending=all.some(r=>r.status==='pending');
+  return rs.map((r,i)=>{
+    const got=Math.max(0, Math.min(r.amount, pool)); pool-=got;
+    const next=rs[i+1];
+    // รายการที่รับเงินในช่วงวันที่นี้ ใช้นับว่ารับมากี่ครั้ง
+    const hits=all.filter(x=>x.date>=r.date && (!next||x.date<next.date));
+    const rec = hits.length
+      ? {amount:hits.reduce((a,x)=>a+x.amount,0),
+         ids:hits.flatMap(x=>x.ids||[]),
+         status:hits.some(x=>x.status==='pending')?'pending':'approved'}
+      : null;
+    return {...r, rec, got, hits, short:Math.max(0,r.amount-got),
+      st: got>=r.amount-0.5 ? 'full' : (d(r.date)>TODAY ? 'future' : (got>0 ? 'part' : 'none'))};
   });
 }
 const RST={full:['เก็บครบ','p-ok'],part:['เก็บไม่ครบ','p-warn'],
@@ -2508,7 +2533,7 @@ function roundsTableHTML(c,tappable){
       <td class="r">${B(r.amount)}</td><td class="r">${r.got?B(r.got):'—'}</td>
       <td class="r" style="${r.short&&r.st!=='future'?'color:var(--warn);font-weight:600':''}">${
         r.st==='future'?'—':r.short?B(r.short):'—'}</td>
-      <td class="r">${r.rec?r.rec.ids.length||1:'—'}</td>
+      <td class="r">${r.hits&&r.hits.length?r.hits.length:'—'}</td>
       <td><span class="pill ${RST[r.st][1]}">${RST[r.st][0]}</span></td></tr>`}).join('')+'</tbody>';
 }
 const CALLEG=`<div class="callegend"><span><i style="background:var(--ok)"></i>อนุมัติแล้ว</span>
@@ -3108,20 +3133,43 @@ function appPreview(){
 document.getElementById('asDays').oninput=()=>{suggestInterest();appPreview()};
 document.getElementById('asInt').oninput=appPreview;
 document.getElementById('asAmtCustom').oninput=()=>{suggestInterest();appPreview()};
+// หาลูกค้าเก่า: เทียบเบอร์ก่อน ถ้าไม่เจอค่อยเทียบชื่อ (ลูกค้าเปลี่ยนเบอร์บ่อย)
+let oldMatchId=null;
+function findOld(){
+  const phone=String(document.getElementById('asPhone').value||'').replace(/\D/g,'');
+  const name=String(document.getElementById('asName').value||'').trim();
+  if(phone.length>=9){
+    const h=custStats(phoneKey({phone}),null);
+    if(h.list.length) return {h, by:'phone'};
+  }
+  if(name.length>=4){
+    const hit=contracts.find(c=>String(c.name||'').trim()===name);
+    if(hit) return {h:custStats(custKey(hit),null), by:'name'};
+  }
+  return null;
+}
 function lookupOld(){
   const box=document.getElementById('asOld');
-  const phone=document.getElementById('asPhone').value;
-  if(String(phone).replace(/\D/g,'').length<9){ box.hidden=true; return }
-  const h=custStats(custKey({phone}),null);
-  if(!h.list.length){ box.hidden=true; return }
+  const found=findOld();
+  if(!found){ box.hidden=true; oldMatchId=null; return }
+  const {h,by}=found;
   const prev=h.rows[0].c;
+  oldMatchId=prev.id;
   box.hidden=false;
-  box.innerHTML=`<div class="app" style="margin:0">
-    <div class="hd"><b>ลูกค้าเก่า · ${esc(prev.name)}</b><span class="pill ${h.cls}">${h.grade}</span></div>
+  box.innerHTML=`<div class="app" style="margin:0${by==='name'?';border-color:var(--warn)':''}">
+    <div class="hd"><b>ลูกค้าเก่า · ${esc(prev.name)} <span class="mono">รหัส ${esc(prev.id)}</span></b>
+      <span class="pill ${h.cls}">${h.grade}</span></div>
+    ${by==='name'?`<div class="fmini" style="color:var(--warn)">ชื่อตรงกับลูกค้าเก่า แต่<b>เบอร์ไม่ตรง</b> —
+      ถ้าเป็นคนเดียวกันที่เปลี่ยนเบอร์ ให้กดปุ่มด้านล่าง ระบบจะใช้รหัส ${esc(prev.id)} เดิม
+      ประวัติเก่าจะต่อกัน</div>`:''}
     <div class="meta"><span>เคยกู้ ${h.list.length} สัญญา · ปิดครบ ${h.closed}</span>
-      <span>สัญญาล่าสุด ${esc(prev.no)} · ${B(prev.amount)} บาท</span></div>
-    <div class="acts"><button class="ghost" id="asUseOld">ใช้ข้อมูลเดิม (ชื่อ + รูป)</button></div></div>`;
+      <span>สัญญาล่าสุด ${esc(prev.no)} · ${B(prev.amount)} บาท</span>
+      <span>เบอร์เดิม ${esc(prev.phone||'—')}</span></div>
+    <div class="acts"><button class="ghost" id="asUseOld">ใช้ข้อมูลเดิม (ชื่อ + รูป + รหัส)</button>
+      <button class="ghost" id="asNotOld">คนละคน เปิดรหัสใหม่</button></div></div>`;
+  document.getElementById('asNotOld').onclick=()=>{ oldMatchId=null; box.hidden=true; };
   document.getElementById('asUseOld').onclick=()=>{
+    oldMatchId=prev.id;
     document.getElementById('asName').value=prev.name;
     const ph=prev.photos||{};
     ['id','home','shop'].forEach(k=>{ if(ph[k]&&ph[k].url) newPhotos[k]=ph[k] });
@@ -3136,6 +3184,7 @@ function lookupOld(){
   };
 }
 document.getElementById('asPhone').oninput=lookupOld;
+document.getElementById('asName').oninput=lookupOld;
 document.getElementById('asUpfAmt').oninput=()=>{upfrontTouched.as=true;appPreview()};
 document.getElementById('fNew').onclick=()=>{
   document.getElementById('asStart').value=thisRoundDate();
@@ -3154,12 +3203,13 @@ document.getElementById('asSend').onclick=async()=>{
     start:document.getElementById('asStart').value||thisRoundDate(),
     upfront_mode:'custom',
     upfront_amt:Number(document.getElementById('asUpfAmt').value)||0,
+    cust_id: oldMatchId||null,
     note:document.getElementById('asNote').value.trim(),
     photos:{...newPhotos,extra:extraPhotos.slice()},
     collector:collector(),status:'pending',created_at:new Date().toISOString()};
   const res=await dbAdd('applications',rec,apps);
   if(res!==true){ hint.textContent='ส่งไม่สำเร็จ ลองอีกครั้ง'; return }
-  newPhotos={}; extraPhotos=[]; renderExtra();
+  newPhotos={}; extraPhotos=[]; renderExtra(); oldMatchId=null;
   document.getElementById('asOld').hidden=true;
   document.getElementById('asName').value=''; document.getElementById('asPhone').value='';
   document.getElementById('asNote').value='';
